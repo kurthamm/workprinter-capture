@@ -10,7 +10,7 @@ Independent project; not affiliated with MovieStuff or AlternaWare.
 - On each WorkPrinter, a small **USB sync box** (Raspberry Pi Pico 2) plugs into the WorkPrinter's sync socket, where the old syncmouse went. Nothing inside the WorkPrinter is changed. A modern **USB camera** looks at the film gate. Both plug into the mini PC.
 - You run everything from **a web browser on any phone, tablet or laptop**.
 
-Load the film, start the WorkPrinter and walk away. Recording starts by itself with the first frame, and every frame is counted. At the end of the reel, or if anything goes wrong, it sounds an alarm and sends an alert to your phone. Then press Create Movie: MP4, lossless archive (FFV1) or ProRes, at 16, 18, 24 fps or any speed.
+Load the film, start the WorkPrinter and walk away. Recording starts by itself with the first frame, and every frame is counted. At the end of the reel, or if anything goes wrong, it sounds an alarm on the web page, and can also send an alert to your phone (optional; set up during installation). Then press Create Movie: MP4, lossless archive (FFV1) or ProRes, at 16, 18, 24 fps or any speed.
 
 ## Status
 
