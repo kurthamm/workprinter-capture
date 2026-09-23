@@ -13,6 +13,18 @@ Recorded 2026-09-23 (first planning session). Nothing has been built yet.
 
 **Explicitly not wanted:** A copy of the old XP-era software with its old limits. The owner said: *"I don't want to build a stupid application and make it limited like the one from XP days."* The new software must be built around the WorkPrinter XP and modern cameras, and deliver high quality.
 
+### 1.1 Audience: every WorkPrinter owner
+
+**Decision (2026-09-23):** This is **the replacement for CineCap** for anyone with a MovieStuff WorkPrinter, not just the owner's two machines. The owner said: *"We need to be the replacement software for that one we used to use and helping people with the WorkPrinter."*
+
+**Consequences:**
+- The repository is public on GitHub: https://github.com/kurthamm/workprinter-capture
+- **Syncmouse mode is the standard mode**, because every WorkPrinter owner already has a syncmouse. Camera-triggered mode is an optional upgrade.
+- Any standard USB webcam must work (with a quality warning for compressed modes), because other owners will use whatever camera they have.
+- `README.md` becomes a setup guide for any owner, with a list of tested cameras.
+- Independent project; not affiliated with MovieStuff or AlternaWare. Repository named `workprinter-capture` rather than `moviestuff` for that reason.
+- License: open question (MIT recommended so others can use and improve it).
+
 ---
 
 ## 2. What the system consists of
@@ -65,11 +77,12 @@ What we found about the software being replaced:
 
 ### 5.1 How the camera gets triggered
 
-**Decision:** Preferred method — wire the XP's frame switch (the RCA jack) **directly into the camera's trigger input**. The camera takes exactly one picture per frame, at the moment the film is still.
+**Decision (revised 2026-09-23 after the audience decision and code review):**
 
-**Why:** This removes the syncmouse, removes the need to calibrate timing between a click and a video stream, and removes blurred or mixed images caught while film is moving. It is the biggest improvement over the CineCap design.
+- **Standard: syncmouse mode.** Continuous camera video; each syncmouse click picks the matching picture. Works with any camera and every WorkPrinter owner already has the syncmouse. Every click is accounted for as one saved frame or one recorded failure.
+- **Optional upgrade: camera-triggered mode.** Wire the XP's frame switch (the RCA jack) into the camera's trigger input, so the camera takes exactly one picture per frame while the film is still. No timing calibration and no blurred in-between images.
 
-**Fallback:** The software will also support an ordinary webcam plus the existing syncmouse. If a camera's trigger input doesn't work as advertised, we fall back to this.
+**Why camera-triggered is not the standard:** a standard USB camera gives the software no trigger count, so a trigger the camera misses can't be proven missing. The software flags suspicious gaps in frame timing as "possible missed frame", but only syncmouse mode can guarantee every frame is accounted for. It is also an extra wiring job other owners may not want.
 
 ### 5.2 How much resolution 8mm film actually has
 
@@ -103,7 +116,7 @@ What we found about the software being replaced:
 - **Plan:** buy one ELP camera first, test a reel on one XP. If colors and shadows look good, buy a second. If faded reels look poor, upgrade to a 12-bit industrial camera.
 - The owner stated: *"I don't want a low quality setup. If I need to buy a $600 camera, I will."* Quality comes first; spending is fine where it buys visible quality.
 
-**Software decision that follows:** The software must not be tied to one camera brand. Support standard USB webcams (UVC), and industrial cameras through the GenICam standard (Basler, Hikrobot, Daheng, FLIR, Allied Vision).
+**Software decision that follows:** The software must not be tied to one camera brand. Version 1 supports standard USB webcams (UVC) only. Industrial cameras through the GenICam standard (Basler, Hikrobot, Daheng, FLIR, Allied Vision) are **not in version 1**; camera access sits behind an interface so an adapter can be added later. If the owner upgrades to a 12-bit industrial camera, that adapter becomes the next piece of work.
 
 ### 5.5 Lens
 
@@ -132,9 +145,11 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 - Proposed stack: C# / WPF / .NET 10, Media Foundation for camera input, Windows Raw Input for the syncmouse, FFmpeg for movies.
 
 **Changed from that document:**
-- The document assumed the old approach: syncmouse click + continuous video + timing calibration. **Now preferred:** camera triggered directly by the XP switch; syncmouse becomes the fallback.
-- The document excluded HDR/multi-exposure, higher bit depth and archival formats. The owner wants a modern, non-limited application, so these are **back under consideration** (not yet decided): multiple exposures per frame, 16-bit/RAW frame capture, archival export (ProRes, FFV1), automatic frame alignment using sprocket holes.
-- Camera input must support industrial (GenICam) cameras as well as standard webcams — not only Media Foundation.
+- Syncmouse mode stays the standard (as in the document); **camera-triggered mode is added** as an optional upgrade.
+- **Archival export is in version 1:** FFV1 (lossless, MKV) and ProRes 422 HQ (MOV) presets alongside MP4/H.264. The document deferred these; the owner wants a modern, non-limited application and FFmpeg makes them cheap.
+- **16-bit PNG** is saved when a camera delivers more than 8 bits.
+- **Compressed camera modes (MJPEG)** are accepted with a visible quality warning, because other owners' webcams may only offer that at full resolution.
+- Still not in version 1: multiple exposures per frame (HDR), industrial (GenICam) cameras, automatic frame alignment using sprocket holes.
 
 ---
 
@@ -156,14 +171,14 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 1. **XP optics:** Does the owner's XP still have its projection lens and the condenser lens the camcorder pointed at? Decides how the new camera mounts.
 2. **Camera purchase:** Confirm starting with one ELP AR0234 for testing.
 3. **Windows PC:** Which PC will run it, and how the owner will test builds on it.
-4. **Modern features:** Which of HDR, RAW/16-bit capture, archival export and sprocket-hole alignment go into version 1.
+4. **License:** MIT recommended, so other WorkPrinter owners can use and improve it.
 
 ---
 
 ## 9. Next steps
 
-1. Owner approves writing the spec.
-2. Write the spec (plain language), owner reviews it.
+1. Owner reviews the version 1 spec: `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`.
+2. Write the step-by-step implementation plan.
 3. Build the software against a simulated camera and trigger.
 4. Test on the owner's Windows PC with a webcam.
 5. Connect the real camera and XP; test one reel on each machine.
