@@ -10,13 +10,14 @@ Replacement capture software for the owner's two MovieStuff WorkPrinter XP 8mm f
 - `WorkPrinter_Windows_Requirements_v2.md` — owner-supplied requirements (61 requirements); partly superseded, see DECISIONS.md section 6
 
 ## Status (2026-09-23)
-- Planning only. No code yet. Public repo: https://github.com/kurthamm/workprinter-capture (PR workflow, CodeRabbit reviews).
-- Goal: THE CineCap replacement for all WorkPrinter owners, not just the owner's two XPs. Syncmouse mode is standard; camera-triggered is optional.
-- Brainstorming (architectural path). Next: owner reviews the draft v1 spec, then implementation plan.
-- Open questions: XP optics (projection/condenser lens present?), first camera purchase (ELP AR0234 proposed), which Windows PC, license (MIT recommended).
-- .NET 10 SDK installed from Ubuntu apt (10.0.112); building a WPF win-x64 app on Linux verified with `-p:EnableWindowsTargeting=true`.
+- Planning only. No code yet. Public repo: https://github.com/kurthamm/workprinter-capture (PR workflow, CodeRabbit reviews). PR #1 holds all planning docs.
+- **Current design: WorkPrinter XP + Raspberry Pi 5 per machine ("node": sync via RCA to GPIO, lamp/motor relays, USB camera, local SSD spool) + one mini PC ("hub": reels, FFmpeg movies, web UI) + browser.** Windows design abandoned. Python 3.11+, FastAPI, libgpiod, V4L2.
+- Spec revision 2 (Pi + mini PC) awaiting owner review. Next: implementation plan (writing-plans skill).
+- Open questions: XP model (photos of switches/inside back), optics, timing disk position, camera purchase, mini PC model, license (MIT recommended).
+- .NET SDK was installed earlier for the abandoned Windows plan; not needed now.
 
 ## Working with the owner
 - Keep answers high-level and short. Don't dive into technical details unless asked.
-- Quality matters, but be cost-sensible: recommend the cheapest option that meets the quality bar, explain what spending more buys.
-- Target is Windows 11; this dev server is Linux. Core logic must be testable here; Windows-only parts get tested on the owner's PC.
+- Owner wants the best solution and objects to penny-pinching ("Quit being cheap!") but also to overkill (a $600 camera for 8mm). Recommend the right tool for the job, not the cheapest or the most expensive.
+- Everything is Linux (dev server, Pi, mini PC); develop and test against simulated camera/sync/relays here.
+- Owner is not technical and memory is uncertain: confirm hardware facts against MovieStuff's archived pages (Wayback) rather than asking the owner to recall. Owner wants the best solution, not a minimal one.
