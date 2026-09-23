@@ -3,7 +3,7 @@
 Strategic decisions for the Movie Stuff project, with the reasoning and research behind them.
 Recorded 2026-09-23 (first planning session). Nothing has been built yet.
 
-> **Current design (read this first):** WorkPrinter XP + **one mini PC** for both machines + a **USB camera** and a small **USB control board (Raspberry Pi Pico 2)** on each machine, operated from a web browser. See section 10 and the spec `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`. Earlier sections record how the thinking got there; where they mention Windows, a Raspberry Pi 5 per machine, or the syncmouse as the standard, section 10 supersedes them.
+> **Current design (read this first):** WorkPrinter XP + **one mini PC** for both machines + a **USB camera** and a small **USB sync box (Raspberry Pi Pico 2)** on each machine, operated from a web browser. **The WorkPrinters are not modified.** See section 10 and the spec `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`. Earlier sections record how the thinking got there; where they mention Windows, a Raspberry Pi 5 per machine, or the syncmouse as the standard, section 10 supersedes them.
 
 ---
 
@@ -21,7 +21,7 @@ Recorded 2026-09-23 (first planning session). Nothing has been built yet.
 
 **Consequences:**
 - The repository is public on GitHub: https://github.com/kurthamm/workprinter-capture
-- ~~Syncmouse mode is the standard mode~~ — superseded by section 10: a control board reads the WorkPrinter's sync socket directly; an existing syncmouse plugged into the mini PC remains a supported no-wiring alternative.
+- ~~Syncmouse mode is the standard mode~~ — superseded by section 10: a sync box reads the WorkPrinter's sync socket directly; an existing syncmouse plugged into the mini PC remains a supported no-wiring alternative.
 - Any standard USB webcam must work (with a quality warning for compressed modes), because other owners will use whatever camera they have.
 - `README.md` becomes a setup guide for any owner, with a list of tested cameras.
 - Independent project; not affiliated with MovieStuff or AlternaWare. Repository named `workprinter-capture` rather than `moviestuff` for that reason.
@@ -33,7 +33,7 @@ Recorded 2026-09-23 (first planning session). Nothing has been built yet.
 
 **Original decision (superseded by section 10):** WorkPrinter XP + Windows 11 PC + USB camera + software.
 
-**Current decision:** WorkPrinter XP (unchanged except removable relay wiring) + **USB control board (Pico 2) and USB camera per WorkPrinter** + **one mini PC** for both + the software, operated from a web browser. Details in section 10.
+**Current decision:** WorkPrinter XP (not modified) + **USB sync box (Pico 2) and USB camera per WorkPrinter** + **one mini PC** for both + the software, operated from a web browser. Details in section 10.
 
 ---
 
@@ -132,16 +132,16 @@ Found 2026-09-23 via the Wayback Machine index of moviestuff.tv. Key pages: `set
 **Decision (final, 2026-09-23; history below).** Two separate choices, with fixed names used in the spec, the code and the tests:
 
 **Sync input — where the frame click comes from:**
-- **Direct sync (standard):** the WorkPrinter's RCA sync socket wired to the control board's input pin (section 10.5). The board timestamps every switch closure.
+- **Direct sync (standard):** the WorkPrinter's RCA sync socket wired to the sync box's input pin (section 10.5). The box timestamps every switch closure.
 - **USB syncmouse (alternative, no wiring):** an existing syncmouse plugged into the mini PC; the software listens only to its left button. PS/2 syncmice need an active PS/2-to-USB converter.
 
 **Capture mode — how the picture for each click is obtained:**
 - **Continuous mode (standard):** the camera streams continuously; for each click the software picks the picture at click time + the per-machine software delay. Works with any USB camera.
-- **Triggered mode (upgrade):** the camera's trigger input is wired to a **control board output pin**, never directly to the WorkPrinter switch. For each click the board sends one trigger pulse after the per-machine software delay, when the film is still, and matches each pulse to one picture or a recorded failure.
+- **Triggered mode (upgrade):** the camera's trigger input is wired to a **sync box output pin**, never directly to the WorkPrinter switch. For each click the box sends one trigger pulse after the per-machine software delay, when the film is still, and matches each pulse to one picture or a recorded failure.
 
 Either way every click is accounted for as one saved frame or one recorded failure.
 
-**History:** earlier drafts made "syncmouse mode" the standard (Windows design) and proposed wiring the switch directly to the camera's trigger. Both were replaced: the control board reads the switch itself, and triggering goes through the board so the software delay applies (the timing disk may still be set for an old camcorder) and every trigger is counted.
+**History:** earlier drafts made "syncmouse mode" the standard (Windows design) and proposed wiring the switch directly to the camera's trigger. Both were replaced: the sync box reads the switch itself, and triggering goes through the box so the software delay applies (the timing disk may still be set for an old camcorder) and every trigger is counted.
 
 ### 5.2 How much resolution 8mm film actually has
 
@@ -204,9 +204,9 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 - Proposed stack: C# / WPF / .NET 10, Media Foundation for camera input, Windows Raw Input for the syncmouse, FFmpeg for movies.
 
 **Changed from that document:**
-- **Platform:** Windows 11 / C# / WPF replaced by one Linux mini PC with a USB control board per machine, Python, web page (section 10). Windows-specific requirements (Raw Input, Media Foundation, click protection on a desktop window, "software can't stop the motor") no longer apply.
-- **Sync:** read directly from the WorkPrinter by the control board; syncmouse becomes an alternative. **Triggered-camera mode** added, with the board sending the trigger.
-- **Projector control added:** the control board switches lamp and motor through relays and stops the machine on any fault or at the end of the reel.
+- **Platform:** Windows 11 / C# / WPF replaced by one Linux mini PC with a USB sync box per machine, Python, web page (section 10). Windows-specific requirements (Raw Input, Media Foundation, click protection on a desktop window) no longer apply. "Software can't stop the motor" still applies (section 10.1, item 10).
+- **Sync:** read directly from the WorkPrinter by the sync box; syncmouse becomes an alternative. **Triggered-camera mode** added, with the box sending the trigger.
+- **Projector control:** added in revision 2, then dropped (section 10.1, item 10). The operator runs the WorkPrinter; the software alarms and alerts.
 - **Archival export is in version 1:** FFV1 (lossless, MKV) and ProRes 422 HQ (MOV) presets alongside MP4/H.264. The document deferred these; the owner wants a modern, non-limited application and FFmpeg makes them cheap.
 - **16-bit PNG** is saved when a camera delivers more than 8 bits.
 - **Compressed camera modes (MJPEG)** are accepted with a visible quality warning, because other owners' webcams may only offer that at full resolution.
@@ -220,16 +220,15 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 
 **Can't be guaranteed until tested with the real equipment:**
 - The chosen camera's trigger input actually working as advertised (fallback: continuous mode).
-- The relay wiring for lamp and motor, which depends on the owner's XP model (needs photos/inspection).
-- How precisely the DC motor can stop with a frame in the gate.
+- Bulb flicker on the owner's machines (handled with flicker-safe exposure times).
 
-**Development approach:** the dev server runs Linux, like the mini PC. Everything is developed and tested here against a simulated camera and a simulated control board; only the physical connections need the owner's equipment. (The earlier Windows plan needed the owner's PC for most testing; this is a major reason the Linux design is easier to build and verify.)
+**Development approach:** the dev server runs Linux, like the mini PC. Everything is developed and tested here against a simulated camera and a simulated sync box; only the physical connections need the owner's equipment. (The earlier Windows plan needed the owner's PC for most testing; this is a major reason the Linux design is easier to build and verify.)
 
 ---
 
 ## 8. Open questions
 
-1. **Which XP model the owner has** (owner, 2026-09-23: *"I think both of my units have bulbs"*, so likely the older type; photos to confirm): push buttons in the middle (older), three toggle switches on the back (newer), a control box with R/G/B/M sliders (RGB), or a single light knob (HD). Photos of the switch panel and inside the back cover decide the relay wiring.
+1. **Which XP model the owner has** (owner, 2026-09-23: *"I think both of my units have bulbs"*, so likely the older type; photos to confirm): push buttons in the middle (older), three toggle switches on the back (newer), a control box with R/G/B/M sliders (RGB), or a single light knob (HD). Photos confirm it; it matters for bulb flicker, not for wiring (the machines are not modified).
 2. **XP optics:** whether the projection lens and condenser lens are still fitted. Decides how the new camera mounts.
 3. **Timing disk position** on the owner's machines (set for an old camcorder, or at the claw-bottom mark).
 4. **Camera purchase:** start with one ELP AR0234; confirm its trigger mode works.
@@ -240,16 +239,16 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 
 ## 9. Next steps
 
-1. Owner reviews the version 1 spec (revision 3, one mini PC + control boards): `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`.
+1. Owner reviews the version 1 spec (revision 3, one mini PC + sync boxes, WorkPrinters not modified): `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`.
 2. Write the step-by-step implementation plan.
-3. Build the app core, simulators, web page and export on the dev server; write and unit-test the control board firmware.
-4. Owner buys parts (section 10.4); bench-test the mini PC with both cameras and a control box.
-5. Owner sends photos of the WorkPrinter; design and install relay wiring.
+3. Build the app core, simulators, web page and export on the dev server; write and unit-test the sync box firmware.
+4. Owner buys parts (section 10.4); bench-test the mini PC with both cameras and a sync box.
+5. Owner sends photos of the WorkPrinter (model, bulb, optics) to design the camera mount.
 6. Film tests on both machines.
 
 ---
 
-## 10. Platform: one mini PC + USB control boards (current design)
+## 10. Platform: one mini PC + USB sync boxes (current design)
 
 ### 10.1 How we got here (2026-09-23)
 
@@ -261,25 +260,29 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 6. The owner's operating idea: *"I set everything up and I start the 8mm projector and it starts the mouse stuff and someone knows that everything is working."* Decision: a scan can start **either from the web page or just by starting the projector**; the system detects the first frame click and records automatically, shows live status, and alarms on problems. An "Arm" button was dropped as confusing.
 7. Concern that the Pi is too weak: capture and control are easy for a Pi 5; **movie creation is slow** on it (no hardware video encoder; 30–45 minutes for a 400 ft reel) and future HDR would be heavy. The owner chose **"mini PC and full Pi"** — not a microcontroller (Pico) — *"Quit being cheap!"*
 8. Correction recorded: the frame switch keeps clicking after the film runs out (it is driven by the motor), so **end of reel is detected by the camera seeing an empty gate**, not by the clicks stopping.
-9. **Pi per machine dropped (revision 3).** The owner asked: *"Why do I need a mini PC and a Raspberry Pi?!"* Nothing required both. The Pi-per-machine split assumed each machine had to run on its own and be networked. With both WorkPrinters in the same room (*"of course they would be in the same room!"*), one mini PC can run both cameras directly. Decision: **one mini PC** for everything, plus a **Raspberry Pi Pico 2 control board per machine** on USB for the frame switch, relays and camera trigger.
-   - This is **not a cost cut**, and it doesn't reverse item 7. There, the Pico was offered as a cheaper replacement for the whole Pi. Here it does only the jobs that need exact timing. A microcontroller timestamps switch closures and times stops and triggers to the microsecond, more precisely than any computer running a full operating system. It also keeps working (safety stop) if the mini PC hangs.
+9. **Pi per machine dropped (revision 3).** The owner asked: *"Why do I need a mini PC and a Raspberry Pi?!"* Nothing required both. The Pi-per-machine split assumed each machine had to run on its own and be networked. With both WorkPrinters in the same room (*"of course they would be in the same room!"*), one mini PC can run both cameras directly. Decision: **one mini PC** for everything, plus a **Raspberry Pi Pico 2 per machine** on USB for the frame switch and camera trigger (called the "control box" until item 10, the "sync box" after).
+   - This is **not a cost cut**, and it doesn't reverse item 7. There, the Pico was offered as a cheaper replacement for the whole Pi. Here it does only the jobs that need exact timing. A microcontroller timestamps switch closures and times triggers to the microsecond, more precisely than any computer running a full operating system.
    - Gains: one computer instead of three, no networking between machines, no frame spool or copying, fewer parts to buy and maintain.
-   - Costs, and how they're handled: the Pico's clock must be synced to the mini PC's (continuous sync, error shown, fault over the limit). Two cameras share one computer's USB (mini PC with separate USB 3 controllers; checked in Setup). One computer runs both machines (separate capture process per machine; the Pico's heartbeat safety stop).
-   - Owner's syncmouse has the old round PS/2 plug. It isn't needed; the RCA cable goes straight from the WorkPrinter to the control box.
+   - Costs, and how they're handled: the Pico's clock must be synced to the mini PC's (continuous sync, error shown, fault over the limit). Two cameras share one computer's USB (mini PC with separate USB 3 controllers; checked in Setup). One computer runs both machines (separate capture process per machine).
+   - Owner's syncmouse has the old round PS/2 plug. It isn't needed; the RCA cable goes straight from the WorkPrinter to the sync box.
+10. **No modification of the WorkPrinters; relays dropped.** Adding lamp and motor control means opening the machine and rerouting a wire at each switch through a relay. The owner said: *"I am not materially modifying the work printer. I am not an electrician or electronics repair person."* The owner believes both machines have bulbs, so their switches likely carry wall voltage. Decision: **the WorkPrinter is not modified.** The operator starts and stops it with its own switches, as with CineCap.
+   - The Pico becomes a **sync box**: RCA in, USB out. It reads the frame switch and (optionally) triggers the camera. It has no relays, stop-at-gate or heartbeat safety stop.
+   - The system still records every frame and calls the operator back with an alarm and phone alert at the end of the reel or on a problem ("STOP WORKPRINTER 1 NOW"). After a problem, the operator winds back and presses Resume; overlap between segments is found and trimmed in Review.
+   - Automatic lamp and motor control stays listed as a possible later, professionally installed option for owners who want it (spec section 13).
 
 ### 10.2 The design in one paragraph
 
-One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a small USB control box (Raspberry Pi Pico 2 with relays), both plugged into the mini PC. The control box reads the frame switch from the WorkPrinter's RCA sync socket with microsecond timestamps, switches the lamp and motor, and fires the camera trigger in triggered mode. The mini PC captures one picture per frame (picked from a continuous stream by a software delay, or by triggering the camera), saves it to the reel drive, makes movies with FFmpeg and serves the web page used from any phone, tablet or laptop. If the mini PC stops responding, the control box stops the projector by itself.
+One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a small USB sync box (Raspberry Pi Pico 2), both plugged into the mini PC. The WorkPrinter is not modified. The sync box plugs into the WorkPrinter's RCA sync socket (where the syncmouse used to go), timestamps each frame click to the microsecond, and fires the camera trigger in triggered mode. The mini PC captures one picture per frame (picked from a continuous stream by a software delay, or by triggering the camera), saves it to the reel drive, makes movies with FFmpeg and serves the web page used from any phone, tablet or laptop. The operator runs the WorkPrinter with its own switches; the system calls them back with an alarm and phone alert at the end of the reel or on any problem.
 
 ### 10.3 Why this is better than CineCap's design
 
 | CineCap era | New design |
 |---|---|
-| Projector clicks a modified mouse; mouse pointer must sit over a button | Control board reads the switch directly; nothing to aim |
+| Projector clicks a modified mouse; mouse pointer must sit over a button | Sync box reads the switch directly; nothing to aim |
 | Timing disk adjusted inside the machine with an Allen wrench, by trial and error | Software delay chosen on a calibration screen, from side-by-side pictures |
 | DV camcorder, 720×480 interlaced, AVI | Modern camera, full resolution, lossless frames, MP4/FFV1/ProRes |
 | Three-drive RAID PC running Windows XP | One mini PC, ordinary SSDs, Linux |
-| Software couldn't stop the projector | Motor stops on any fault and at the end of the reel |
+| Nobody told you the reel had ended or gone wrong | Alarm and phone alert at the end of the reel and on any problem |
 | Nobody knows a frame was missed | Every click accounted for; alarm and phone alert |
 | Proprietary, sold only via a private link | Free and open on GitHub |
 
@@ -290,11 +293,10 @@ One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a smal
 | Part | Notes |
 |---|---|
 | Raspberry Pi Pico 2 H | Headers already fitted; no soldering |
-| Pico screw-terminal breakout board + small case | The "control box" |
-| USB cable for the Pico (Micro-USB to USB-A or USB-C) | Control box to mini PC, up to 5 m |
+| Pico screw-terminal breakout board + small case | The "sync box" |
+| USB cable for the Pico (Micro-USB to USB-A or USB-C) | Sync box to mini PC, up to 5 m |
 | RCA cable male–male (about 6 ft) | WorkPrinter sync socket to the adapter |
 | RCA female to screw-terminal adapter | Search "RCA female to screw terminal" |
-| Opto-isolated relay module, 2+ channels, 3.3 V logic compatible | Lamp and motor; exact choice after inspecting the machine (voltage/current) |
 | USB 3 global-shutter camera (baseline ELP AR0234) + macro/close-up lens | Mount designed after inspecting the machine |
 | USB 3 cable, or active USB 3 extension if over about 3 m | Camera to mini PC |
 
@@ -308,10 +310,10 @@ One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a smal
 
 ### 10.5 Wiring summary
 
-- **Sync:** WorkPrinter RCA sync socket → RCA cable → RCA-to-screw adapter → control board input pin and ground (pins fixed in the setup guide). Internal pull-up; switch closed = low.
-- **Relays:** in series with the WorkPrinter's own lamp and motor switches (WorkPrinter switch on = enabled, relay = run/stop), so either can stop the machine and it can be undone. Designed after photos; mains-voltage wiring only by someone qualified.
-- **Triggered camera (optional):** a control board output pin → camera trigger input (through an opto-isolator if the camera needs one); the board fires it after the software delay.
-- **USB:** each camera and each control box plugs into the mini PC.
+- **Sync:** WorkPrinter RCA sync socket → RCA cable → RCA-to-screw adapter → sync box input pin and ground (pins fixed in the setup guide). Internal pull-up; switch closed = low.
+- **Triggered camera (optional):** a sync box output pin → camera trigger input (through an opto-isolator if the camera needs one); the box fires it after the software delay.
+- **USB:** each camera and each sync box plugs into the mini PC.
+- **Nothing inside the WorkPrinter is touched.**
 
 ---
 
