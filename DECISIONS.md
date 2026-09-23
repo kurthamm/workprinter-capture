@@ -89,6 +89,17 @@ Found 2026-09-23 via the Wayback Machine index of moviestuff.tv. Key pages: `set
 - Features: Settings tab (folders, unit type "V-Box + WorkPrinter", flip, codec, NTSC/PAL, blended or progressive frames, pulse threshold, dead-pixel mask, watermark); Capture tab (customer name with automatic `_0001` numbering, film type for a footage counter, **Keep / Throw** after each capture); Speed Change tab (speed preview, several output speeds per capture, a true 1:1 "24P" option); **numbered image sequences** in JPG/PNG/BMP/TIF (65,000 frames per folder); Play tab showing total length in feet or meters; optional PC shutdown after processing.
 - Limits: 32-bit Windows XP/Vista/7 only, English (US) regional settings required, a dedicated 7200 RPM drive, DV AVI output.
 
+**WorkPrinter XP models and generations** (from `wp_xp_rgb.html`, `wp_hd.html`, `workprinter_guide.html`, `read_upgrade_wp.html`, `faq_print2.html`, `remote.html`)
+- **Older XP:** original tungsten bulb, **lamp and motor push buttons on the center chassis**, runs on 110 VAC (transformer needed abroad).
+- **Newer XP:** LED light source, high-torque DC motor, **vertical toggle switches for lamp, motor and synch on the rear plastic cover**, runs on 100–256 VAC. MovieStuff offered to upgrade older units (refurb + DC motor + LED, $350).
+- **XP RGB** ($2,395): RGB LED light with R/G/B/M sliders on a control box; sync RCA jack on the back of that control box.
+- **XP HD** ($2,195; +$35 for syncmouse): LED with a panel preset knob; **Velocity circuit built in** (sync pulses on LEFT and RIGHT RCA audio outputs, no timing disk needed with Velocity); a switch halves the capture rate for slow systems.
+- **Sync connection:** on the plain XP, a "synch socket" on the side of the projector near the back, next to a switch marked "synch"; on the RGB and HD, the RCA jack on the back of the control box. A provided cable connects it to the syncmouse. The sync plug is **RCA ("phono")**, confirmed.
+- **Common to all XPs:** about 8 frames per second scanning, sprocketless drive, 400 ft capacity, enlarged gate showing 100% of the frame, jumbo 5-inch condenser lens, camera images the emulsion side, no shutter (true frame-by-frame), silent only.
+- **LED colour:** the LED is daylight-balanced; MovieStuff suggested an 85B filter if a camera couldn't white-balance to it.
+- **Remote (early WorkPrinter, 2003 page):** single-frame advance, auto run, independent lamp control, always stops with the current frame in the gate, and a "remote trigger" jack for timing devices. Not confirmed for the XP; the XP RGB page mentions a remote for exposure only.
+- **Not found in any archived page:** whether the motor or light connect to the control box through phono plugs.
+
 **What this means for the new design**
 1. The **timing disk becomes a software setting** where possible: the new system measures the switch timing and applies an adjustable delay, instead of opening the machine with an Allen wrench. Where the camera is triggered directly, the disk should be reset to the claw-bottom position (the Velocity Box procedure).
 2. **Keep Velocity's best idea:** record the trigger timing so the frame selection can be re-done in software without rescanning.
