@@ -148,7 +148,8 @@ When the motor is stopped (end of reel, fault, or Stop), the control board cuts 
 
 - The camera with a macro lens looks straight at the gate, replacing the old condenser-lens-plus-camcorder arrangement. If looking through the condenser lens gives a better image on a particular machine, it does that instead. The mount is designed after inspecting the owner's machine.
 - The picture may be mirror-reversed depending on placement. Flip and rotate are software settings.
-- The LED light is daylight-balanced. The camera's white balance is set once and locked.
+- **Light source:** the owner believes both machines have the older **bulb** (to be confirmed from photos); newer XPs have a daylight LED. Either way, the camera's white balance is set once for that light and locked.
+- **Bulb flicker:** a bulb on wall power brightens and dims at twice the mains frequency (120 Hz in North America, 100 Hz elsewhere). MovieStuff warned it causes flicker and banding with fast shutter speeds. The Setup screen offers **flicker-safe exposure times** (whole multiples of 1/120 s or 1/100 s, per the mains setting), and warns if a bulb machine uses any other exposure. An LED retrofit is a possible later upgrade (section 13).
 
 ## 5. How capture works
 
@@ -395,6 +396,7 @@ The system is not called hardware-ready until steps 5–8 pass.
 ## 13. Not in version 1 (designed for, built later)
 
 - HDR (several exposures per frame). Needs a controllable light and camera; the control board can switch the light and the mini PC has the power.
+- LED light retrofit for bulb machines (steady light, less heat, no bulbs to replace; MovieStuff once sold this upgrade).
 - Stepper motor conversion for exact frame-by-frame motion (the control board can drive a stepper driver).
 - 12-bit industrial (GenICam) cameras.
 - Automatic frame alignment on sprocket holes, stabilization.
@@ -407,6 +409,7 @@ The system is not called hardware-ready until steps 5–8 pass.
 | Risk | What we do |
 |---|---|
 | Owner's XP switch/motor wiring is unknown | Relay wiring designed only after photos/inspection; sync input and capture work without relays. |
+| Bulb flicker causes brightness changes between frames | Flicker-safe exposure times only; brightness of each frame logged and sudden jumps flagged in Review. |
 | Relay would switch mains voltage | Rated relay; wiring done by someone qualified; documented clearly. |
 | DC motor coasts, so stop-with-frame-in-gate is imprecise | Calibrate the stop delay per machine; worst case, stop anywhere and the operator jogs by hand. |
 | Two cameras share USB bandwidth | Mini PC chosen with separate USB 3 controllers; Setup screen checks both at full rate together. |

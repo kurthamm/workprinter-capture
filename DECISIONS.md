@@ -229,7 +229,7 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 
 ## 8. Open questions
 
-1. **Which XP model the owner has:** push buttons in the middle (older), three toggle switches on the back (newer), a control box with R/G/B/M sliders (RGB), or a single light knob (HD). Photos of the switch panel and inside the back cover decide the relay wiring.
+1. **Which XP model the owner has** (owner, 2026-09-23: *"I think both of my units have bulbs"*, so likely the older type; photos to confirm): push buttons in the middle (older), three toggle switches on the back (newer), a control box with R/G/B/M sliders (RGB), or a single light knob (HD). Photos of the switch panel and inside the back cover decide the relay wiring.
 2. **XP optics:** whether the projection lens and condenser lens are still fitted. Decides how the new camera mounts.
 3. **Timing disk position** on the owner's machines (set for an old camcorder, or at the claw-bottom mark).
 4. **Camera purchase:** start with one ELP AR0234; confirm its trigger mode works.
