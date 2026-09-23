@@ -128,7 +128,7 @@ Automatic lamp and motor control (relays wired into the WorkPrinter's switches) 
 ### 4.4 The timing disk
 
 - The **timing disk** inside the WorkPrinter sets the point in each frame cycle where the switch closes. On the owner's machines it may still be set for an old camcorder's delay.
-- The new system does not depend on its position. It measures when the film is still and applies a **software delay** (section 5.3).
+- The new system does not depend on its position. It measures when the film is still and applies a **software delay** (section 5.4).
 - The setup guide includes MovieStuff's procedure to reset the disk to the "claw at bottom of pulldown" position (marks on the pulley and disk), for owners who want the switch to mark the exact moment the frame lands.
 
 ### 4.5 Camera placement
@@ -172,7 +172,7 @@ It talks to the mini PC over USB serial. Every message from the box carries a se
 1. The camera streams continuously (typically 30–60 pictures per second, uncompressed where the camera allows).
 2. The software keeps the last second of pictures in a ring buffer.
 3. For each click, it picks the picture whose timestamp is closest to **click time + delay**. The delay is the **software timing disk**, set per machine.
-4. If no picture falls within the allowed window, the frame is recorded as **failed** and the scan stops (section 6.4). A previous picture is never reused.
+4. If no picture falls within the allowed window, the frame is recorded as **failed** and recording stops with an alarm (section 6.4). A previous picture is never reused.
 
 **Calibration screen:** the operator runs a few seconds of film. For several clicks, the screen shows the pictures before and after each click side by side, with a sharpness/motion score under each. The software proposes the best delay from the scores. The operator confirms it or clicks the sharpest picture, and the delay is saved for that machine.
 
