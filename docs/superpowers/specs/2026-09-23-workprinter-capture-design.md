@@ -128,7 +128,9 @@ For owners who don't want to wire anything, an existing syncmouse can plug strai
   - WorkPrinter switch **on** = "enabled"; the relay decides run/stop.
   - WorkPrinter switch **off** = nothing runs, whatever the software does.
   - So **either the operator or the software can always stop the machine.**
-- The operator can put the WorkPrinter back to original by removing the relay wiring.
+- **How it's wired:** at each switch, one of its two wires is taken off and routed through the relay's contacts (switch terminal → new wire → relay → original wire). Nothing else in the machine changes.
+- The operator can put the WorkPrinter back to original by putting that wire back on the switch.
+- With relays wired in, **the WorkPrinter runs only when the control box is plugged in and allows it.** This is deliberate, so the box can always stop it. A **bypass plug** in the control box's relay connector lets the machine run the old way without the box.
 - **Wiring is designed only after inspecting the owner's machine** (photos of the switch panel and inside the back cover). Newer XPs have a DC motor and LED with toggle switches on the back cover; older XPs have a tungsten bulb and push buttons. If a relay would switch mains voltage, the wiring must be done by someone qualified, using a relay rated for it.
 - Relay control is supported from day one. It is switched on for each machine once the wiring is installed and tested.
 
@@ -214,7 +216,10 @@ This mode is supported only for cameras whose trigger mode has been tested and l
 
 ### 6.1 Starting a scan — two ways
 
-**A. From the web page:** press **Scan Reel**. The software checks everything (camera streaming, storage space, control box connected, clock sync, relays working), turns on the lamp, starts the motor, and starts recording when the first frame click arrives.
+**A. From the web page:** press **Scan Reel**. What happens depends on how the machine is connected:
+
+- **Control box with relays:** the software checks the camera (streaming), storage space, control box (connected), clock sync and relays (working). It then turns on the lamp, starts the motor, and starts recording when the first frame click arrives.
+- **Control box without relays, or syncmouse:** the software checks the camera, storage space and sync input (control box and clock sync, or syncmouse). The page then says **"Start the WorkPrinter now"**, and recording starts when the first frame click arrives. The operator runs the machine.
 
 **B. From the projector:** with the machine in **Ready**, the operator starts the WorkPrinter by hand. The first frame click tells the software a reel has started, and it starts recording automatically.
 
