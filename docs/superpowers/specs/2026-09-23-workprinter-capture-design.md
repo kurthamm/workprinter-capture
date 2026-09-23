@@ -135,7 +135,10 @@ When the Pi stops the motor (end of reel, fault, or Stop), it cuts the motor rel
 
 ### 5.1 Clocks
 
-The sync switch and the camera are both read by the same Pi, and both are timestamped by the Linux kernel on the **same monotonic clock** (GPIO edge events and V4L2 camera buffer timestamps). So "which picture goes with which click" is a direct comparison of times on one clock, with no guessing.
+The sync switch and the camera are both read by the same Pi, and both are timestamped by the Linux kernel on the **same monotonic clock**, so "which picture goes with which click" is a direct comparison of times on one clock, with no guessing:
+
+- **Sync:** GPIO edge events are timestamped by the kernel with `CLOCK_MONOTONIC` (libgpiod edge-event clock set to monotonic). The USB syncmouse alternative uses input-event timestamps, also set to `CLOCK_MONOTONIC`.
+- **Camera:** the node checks that every V4L2 capture buffer reports `V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC`. A camera whose buffers report realtime or unknown timestamps is **rejected** in the Setup screen with a clear message. A timestamp taken by the software when a buffer is delivered is never used as a substitute for the capture timestamp.
 
 ### 5.2 Sync handling
 
@@ -226,6 +229,7 @@ If relay control is not installed, the page shows **"STOP THE WORKPRINTER NOW"**
 2. The node sends each saved frame to the hub, with a checksum.
 3. The hub writes it into the reel folder, checks the checksum, and acknowledges.
 4. The node deletes spooled frames only after the hub has acknowledged them and the reel is closed. Spool retention is configurable.
+5. **Retries are safe.** Each frame has a stable identity: reel ID, segment number and frame number. If an acknowledgement is lost and the node resends, the hub acknowledges a resend with the same identity and checksum without writing it twice, and rejects (and reports as a fault) a resend with the same identity but different content.
 
 ### 7.2 Reel folder on the hub
 
@@ -291,8 +295,11 @@ Written in **Python 3.11+** (the version on Raspberry Pi OS Bookworm), one repos
 ### 9.2 Security
 
 - Home network only; nothing is exposed to the internet.
+- **All traffic is encrypted (HTTPS/TLS)**, browser → hub and hub → node, so the password and tokens are never sent in clear text on the home network.
+  - The installer creates a small local certificate authority on the hub and issues certificates for the hub and each node. Browsers show a one-time "trust this certificate" step (documented in the setup guide).
+  - Hub and node verify each other's certificates (mutual TLS); a node only accepts commands from its hub.
 - Web page protected by a password set during installation.
-- Node and hub authenticate each other with a shared token.
+- The node API accepts only the operations the hub needs (status, settings, start/stop, preview, frame transfer).
 
 ### 9.3 Installation
 

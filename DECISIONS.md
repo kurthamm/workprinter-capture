@@ -127,14 +127,21 @@ Found 2026-09-23 via the Wayback Machine index of moviestuff.tv. Key pages: `set
 
 ## 5. Camera
 
-### 5.1 How the camera gets triggered
+### 5.1 How frames are signalled and captured
 
-**Decision (revised 2026-09-23 after the audience decision and code review):**
+**Decision (final, 2026-09-23; history below).** Two separate choices, with fixed names used in the spec, the code and the tests:
 
-- **Standard: syncmouse mode.** Continuous camera video; each syncmouse click picks the matching picture. Works with any camera and every WorkPrinter owner already has the syncmouse. Every click is accounted for as one saved frame or one recorded failure.
-- **Optional upgrade: camera-triggered mode.** Wire the XP's frame switch (the RCA jack) into the camera's trigger input, so the camera takes exactly one picture per frame while the film is still. No timing calibration and no blurred in-between images.
+**Sync input — where the frame click comes from:**
+- **Direct sync (standard):** the WorkPrinter's RCA sync socket wired to a Pi input pin (section 10.5). The Pi timestamps every switch closure.
+- **USB syncmouse (alternative):** an existing syncmouse plugged into the Pi's USB; the Pi listens only to its left button.
 
-**Why camera-triggered is not the standard:** a standard USB camera gives the software no trigger count, so a trigger the camera misses can't be proven missing. The software flags suspicious gaps in frame timing as "possible missed frame", but only syncmouse mode can guarantee every frame is accounted for. It is also an extra wiring job other owners may not want.
+**Capture mode — how the picture for each click is obtained:**
+- **Continuous mode (standard):** the camera streams continuously; for each click the Pi picks the picture at click time + the per-machine software delay. Works with any USB camera.
+- **Triggered mode (upgrade):** the camera's trigger input is wired to a **Pi output pin**, never directly to the WorkPrinter switch. For each click the Pi sends one trigger pulse after the per-machine software delay, when the film is still, and matches each pulse to one picture or a recorded failure.
+
+Either way every click is accounted for as one saved frame or one recorded failure.
+
+**History:** earlier drafts made "syncmouse mode" the standard (Windows design) and proposed wiring the switch directly to the camera's trigger. Both were replaced: the Pi reads the switch itself, and triggering goes through the Pi so the software delay applies (the timing disk may still be set for an old camcorder) and every trigger is counted.
 
 ### 5.2 How much resolution 8mm film actually has
 
@@ -146,7 +153,7 @@ Found 2026-09-23 via the Wayback Machine index of moviestuff.tv. Key pages: `set
 ### 5.3 What matters more than megapixels
 
 1. **Lens quality** — a cheap lens is soft at any resolution. This is where money should go.
-2. **Uncompressed frames** — many cheap USB cameras compress every frame (MJPEG), adding blocky artifacts. The camera must deliver uncompressed images. Easy at 3–6 frames per second.
+2. **Uncompressed frames preferred** — many cheap USB cameras compress every frame (MJPEG), adding blocky artifacts. Uncompressed modes are preferred; MJPEG is accepted with a visible quality warning and the mode used is recorded. Uncompressed is easy at 3–6 frames per second.
 3. **Global shutter + trigger input** — the whole image is exposed at once, at the right moment. No rolling-shutter smear.
 4. **Bit depth** — 10–12-bit output (instead of 8-bit) lets faded color and dark scenes be recovered without banding. This is the main thing a more expensive camera buys.
 
