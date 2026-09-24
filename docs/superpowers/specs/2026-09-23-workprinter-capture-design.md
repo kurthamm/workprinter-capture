@@ -65,7 +65,7 @@ Both WorkPrinters sit in the same room, with the mini PC between them.
 |---|---|---|
 | Sync box | **Raspberry Pi Pico 2 H** (headers already fitted, no soldering) on a **screw-terminal breakout board**, in a small case | Reads the frame switch; triggers the camera (optional) |
 | Sync input | **RCA cable (male–male)** + **RCA female to screw-terminal adapter** (inside the sync box, so the box has an RCA socket) | WorkPrinter sync socket → sync box |
-| Camera | **USB 3 global-shutter camera** (baseline: ELP AR0234, 1920×1200) with a close-up/macro lens | Captures the frames |
+| Camera | **USB 3 color global-shutter camera with a C-mount**, fitted with a **C-mount zoom lens** (exact models to be chosen; see `DECISIONS.md` open question 2) | Captures the frames, from where the camcorder used to sit |
 | Cables | USB cable sync box → mini PC; USB 3 cable camera → mini PC (see 3.4) | |
 
 ### 3.3 The mini PC (one for both WorkPrinters)
@@ -87,7 +87,7 @@ Both WorkPrinters sit in the same room, with the mini PC between them.
 
 ### 3.5 Storage sizing
 
-Each frame is about 3–5 MB at 1920×1200 (lossless PNG).
+Each frame is about 3–5 MB at 1920×1200 (lossless PNG); more for higher-resolution cameras.
 
 | Film | Frames | Frames on disk |
 |---|---|---|
@@ -133,7 +133,7 @@ Automatic lamp and motor control (relays wired into the WorkPrinter's switches) 
 
 ### 4.5 Camera placement
 
-- The camera with a macro lens looks straight at the gate, replacing the old condenser-lens-plus-camcorder arrangement. If looking through the condenser lens gives a better image on a particular machine, it does that instead. The mount is designed after inspecting the owner's machine.
+- The camera sits **where the camcorder used to**: pointed into the WorkPrinter's condenser lens box (which turns the image 90 degrees), about 36–42 inches away, zoomed in to fill the picture with the film frame, as MovieStuff's instructions describe. The WorkPrinter's optics are used as they are.
 - The picture may be mirror-reversed depending on placement. Flip and rotate are software settings.
 - **Light source:** the owner believes both machines have the older **bulb** (to be confirmed from photos); newer XPs have a daylight LED. Either way, the camera's white balance is set once for that light and locked.
 - **Bulb flicker:** a bulb on wall power brightens and dims at twice the mains frequency (120 Hz in North America, 100 Hz elsewhere). MovieStuff warned it causes flicker and banding with fast shutter speeds. The Setup screen offers **flicker-safe exposure times** (whole multiples of 1/120 s or 1/100 s, per the mains setting), and warns if a bulb machine uses any other exposure. An LED retrofit is a possible later upgrade (section 13).

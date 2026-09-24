@@ -229,7 +229,8 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 ## 8. Open questions
 
 1. **Which XP model the owner has** (owner, 2026-09-23: *"I think both of my units have bulbs"*, so likely the older type; photos to confirm): push buttons in the middle (older), three toggle switches on the back (newer), a control box with R/G/B/M sliders (RGB), or a single light knob (HD). Photos confirm it; it matters for bulb flicker, not for wiring (the machines are not modified).
-2. **XP optics:** whether the projection lens and condenser lens are still fitted. Decides how the new camera mounts.
+2. **XP optics — answered 2026-09-23:** the owner's machines still have the condenser lens box that turns the image 90 degrees for the camcorder. **Decision:** the new camera sits where the camcorder did (MovieStuff: 36–42 inches from the condenser lens, 14× zoom or better) with a **C-mount zoom lens**. No macro lens or extension tubes. Still open: the owner's old camcorder model (to size the zoom range exactly).
+   - **Correction:** the ELP AR0234 baseline camera is **USB 2.0** (Amazon listing: "UVC USB2.0"), too slow for uncompressed full-resolution frames at the XP's roughly 8 frames per second, and it has a small fixed lens. It is dropped as the baseline. The camera must be USB 3, color, global shutter, with a C-mount (or CS-mount) for a zoom lens.
 3. **Timing disk position** on the owner's machines (set for an old camcorder, or at the claw-bottom mark).
 4. **Camera purchase:** start with one ELP AR0234; confirm its trigger mode works.
 5. **Mini PC choice:** specific model within the spec (8+ cores, 32 GB RAM, hardware video encoding, at least two USB 3 ports on separate controllers).
