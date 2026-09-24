@@ -13,9 +13,9 @@
 
 It turns a WorkPrinter into an automated 8mm film scanner:
 
-- **One mini PC** runs everything. It works the cameras, captures one full-quality picture per film frame, stores the reels, makes the movies and serves the web page. One mini PC runs both WorkPrinters.
+- **One mini PC** runs everything. It takes in the camcorders' live video, grabs one full-quality picture per film frame, stores the reels, makes the movies and serves the web page. One mini PC runs both WorkPrinters.
 - **A sync box on each WorkPrinter** (Raspberry Pi Pico 2, plugged into the mini PC by USB) plugs into the WorkPrinter's sync socket in place of the old syncmouse. It reads the frame switch with microsecond timing.
-- **A USB camera on each WorkPrinter** looks at the film gate and plugs into the mini PC.
+- **A modern camcorder on each WorkPrinter**, where the old camcorder sat, is simply a **live video feed** into the mini PC (HDMI, through a small HDMI-to-USB adapter). Nothing controls the camcorder; zoom, focus and exposure are set on it once by hand.
 - The operator uses **a web browser on any phone, tablet or laptop**, or on a screen plugged into the mini PC. Nothing needs installing on the viewing device.
 
 Everything runs on the owner's home network. No internet, account or subscription is needed.
@@ -23,12 +23,12 @@ Everything runs on the owner's home network. No internet, account or subscriptio
 ## 2. Goals
 
 1. **Every frame, once, in order.** The sync box sees every switch closure and numbers it, so every film frame is accounted for as one saved picture or one reported failure. Nothing is lost silently.
-2. **Full quality.** Full camera resolution, lossless saved pictures and archival movie formats. No DV-era limits.
+2. **Full quality.** Full HD progressive video (no interlace, no DV compression), lossless saved pictures and archival movie formats. No DV-era limits.
 3. **Walk-away operation.** Load film, start the WorkPrinter and walk away. The system records every frame and calls the operator back (alarm and phone alert) at the end of the reel or on any problem.
 4. **Always know it's working.** A live status page, a loud alarm and an optional phone alert.
 5. **Never lose work.** Frames are saved to disk as they're captured, so a crash or power cut loses at most the frame being written.
 6. **No changes to the WorkPrinter.** Everything plugs into its existing sync socket and the camera looks at the gate. Nothing inside the machine is touched. The operator runs the WorkPrinter with its own switches, as always.
-7. **Built for every WorkPrinter owner.** It works with ordinary USB cameras and common parts, and has a no-wiring option using an existing syncmouse. It is open source, with a setup guide and parts list.
+7. **Built for every WorkPrinter owner.** It works with any camcorder or camera that has clean HDMI output (or any USB webcam), and common parts, and has a no-wiring option using an existing syncmouse. It is open source, with a setup guide and parts list.
 8. **Room to grow.** The design leaves space for the "best solution" upgrades (HDR, stepper motor, 12-bit cameras, automatic frame alignment, color restoration) without rework.
 
 ## 3. Physical setup
@@ -43,13 +43,13 @@ Both WorkPrinters sit in the same room, with the mini PC between them.
  │ sync      gate   │                  │ sync      gate   │
  │ socket     ▲     │                  │ socket     ▲     │
  └──┬─────────┼─────┘                  └──┬─────────┼─────┘
-    │RCA      │ camera looks              │RCA      │ camera looks
+    │RCA      │ camcorder looks           │RCA      │ camcorder looks
     │cable    │ at the gate               │cable    │ at the gate
  ┌──▼──────┐ ┌┴───────────┐            ┌──▼──────┐ ┌┴───────────┐
- │Sync box │ │ USB camera │            │Sync box │ │ USB camera │
+ │Sync box │ │ Camcorder  │            │Sync box │ │ Camcorder  │
  │(Pico 2) │ └─────┬──────┘            │(Pico 2) │ └─────┬──────┘
  └────┬────┘       │                   └────┬────┘       │
-      │ USB        │ USB 3                  │ USB        │ USB 3
+      │ USB        │ HDMI→USB 3             │ USB        │ HDMI→USB 3
       └────────────┴──────────┐  ┌──────────┴────────────┘
                           ┌───▼──▼────┐
                           │  Mini PC  │  capture, reels, movies, web page
@@ -63,17 +63,18 @@ Both WorkPrinters sit in the same room, with the mini PC between them.
 
 | Part | Choice | Purpose |
 |---|---|---|
-| Sync box | **Raspberry Pi Pico 2 H** (headers already fitted, no soldering) on a **screw-terminal breakout board**, in a small case | Reads the frame switch; triggers the camera (optional) |
+| Sync box | **Raspberry Pi Pico 2 H** (headers already fitted, no soldering) on a **screw-terminal breakout board**, in a small case | Reads the frame switch |
 | Sync input | **RCA cable (male–male)** + **RCA female to screw-terminal adapter** (inside the sync box, so the box has an RCA socket) | WorkPrinter sync socket → sync box |
-| Camera | **USB 3 color global-shutter camera with a C-mount**, fitted with a **C-mount zoom lens** (exact models to be chosen; see `DECISIONS.md` open question 2) | Captures the frames, from where the camcorder used to sit |
-| Cables | USB cable sync box → mini PC; USB 3 cable camera → mini PC (see 3.4) | |
+| Camera | **Panasonic HC-V800** camcorder (1080p60, 24× Leica zoom, 1/2.5" BSI sensor, manual controls, clean HDMI output) on a tripod, with its AC adapter | Live video of the film, from where the old camcorder sat |
+| Video input | **Elgato Cam Link 4K** (HDMI in → USB 3 out, appears to Linux as a standard video device) + HDMI cable | Brings the camcorder's live video into the mini PC |
+| Cables | USB cable sync box → mini PC; Cam Link → mini PC USB 3 port (see 3.4) | |
 
 ### 3.3 The mini PC (one for both WorkPrinters)
 
 | Part | Choice | Purpose |
 |---|---|---|
-| Computer | Modern mini PC, **8+ cores (e.g. AMD Ryzen 7 or Intel Core Ultra), 32 GB RAM**, hardware video encoding | Two cameras capturing at once, fast movie creation, headroom for HDR and restoration later |
-| USB | **At least two USB 3 (10 Gbps) ports, ideally on separate USB controllers**, plus two more ports for the sync boxes | One full-speed port per camera |
+| Computer | Modern mini PC, **8+ cores (e.g. AMD Ryzen 7 or Intel Core Ultra), 32 GB RAM**, hardware video encoding | Two live video feeds at once, fast movie creation, headroom for HDR and restoration later |
+| USB | **At least two USB 3 (10 Gbps) ports, ideally on separate USB controllers**, plus two more ports for the sync boxes | One full-speed port per video adapter |
 | System drive | 1 TB NVMe | Operating system and software |
 | Reel storage | **4 TB or larger SSD** (internal second drive or USB 3/USB-C) | All reels (a 400 ft reel is about 120 GB of frames) |
 | Operating system | **Ubuntu 24.04 LTS** | Same Linux as the dev server |
@@ -82,12 +83,12 @@ Both WorkPrinters sit in the same room, with the mini PC between them.
 
 ### 3.4 Cable lengths
 
-- **Cameras:** a plain USB 3 cable works reliably up to about 3 m (10 ft). Place the mini PC between the machines. For a longer run, use an **active USB 3 extension cable**, not a passive one.
+- **Camcorders:** the HDMI cable from camcorder to Cam Link can be long (up to about 5 m / 16 ft). The Cam Link plugs straight into the mini PC; if it must be further away, use an **active USB 3 extension cable**.
 - **Sync boxes:** USB 2 speed, so plain cables up to 5 m (16 ft).
 
 ### 3.5 Storage sizing
 
-Each frame is about 3–5 MB at 1920×1200 (lossless PNG); more for higher-resolution cameras.
+Each frame is about 3–4 MB at 1920×1080 (lossless PNG).
 
 | Film | Frames | Frames on disk |
 |---|---|---|
@@ -146,7 +147,6 @@ The sync box runs small, fixed firmware. It does only the jobs that need exact t
 
 - **Timestamps every switch closure** with its microsecond hardware timer and gives it a sequence number.
 - **Filters contact bounce** (section 5.3) and reports rejected closures.
-- **Fires the camera trigger** in triggered mode (section 5.5).
 - **Answers time-sync requests** from the mini PC (section 5.2).
 
 It talks to the mini PC over USB serial. Every message from the box carries a sequence number, so a lost message shows up as a gap and is a fault. It is never silently skipped.
@@ -155,7 +155,7 @@ It talks to the mini PC over USB serial. Every message from the box carries a se
 
 "Which picture goes with which click" is decided by comparing times, so both must be on one clock:
 
-- **Camera:** the software checks that every V4L2 capture buffer reports `V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC` (kernel `CLOCK_MONOTONIC`, stamped when the picture arrives). A camera whose buffers report realtime or unknown timestamps is **rejected** in the Setup screen with a clear message. A timestamp taken by the software when a buffer is delivered is never used as a substitute.
+- **Camera:** the software checks that every V4L2 capture buffer from the video adapter reports `V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC` (kernel `CLOCK_MONOTONIC`, stamped when the picture arrives). A camera whose buffers report realtime or unknown timestamps is **rejected** in the Setup screen with a clear message. A timestamp taken by the software when a buffer is delivered is never used as a substitute.
 - **Clicks:** the sync box's timestamps are converted to the mini PC's `CLOCK_MONOTONIC` using a continuous time-sync exchange over USB. The mini PC regularly asks the box for its time. It keeps the fastest round trips, and it fits the offset and drift between the two clocks.
   - The expected conversion error is well under 1 ms. At 60 camera pictures per second, pictures are about 17 ms apart.
   - The Setup and Scan screens show the current sync error. If it goes over a set limit (default 2 ms), that is a fault.
@@ -167,36 +167,30 @@ It talks to the mini PC over USB serial. Every message from the box carries a se
 - **Contact bounce** is filtered: a closure within a set time after the previous one (default 20 ms, adjustable) is recorded as bounce and ignored. The filter setting is shown and can be adjusted. Rejected closures are logged, never silently dropped.
 - The software also measures the steady frame rate and flags any interval far outside it.
 
-### 5.4 Continuous mode (standard, works with any USB camera)
+### 5.4 Grabbing the picture for each click
 
-1. The camera streams continuously (typically 30–60 pictures per second, uncompressed where the camera allows).
+This is CineCap's method: the camera is a live video feed, and each click says "grab the picture now". The difference is that every picture is timestamped, so the grab happens at exactly the right moment.
+
+1. The camcorder's video streams continuously into the mini PC (60 pictures per second, uncompressed over HDMI). The WorkPrinter runs about 8 frames per second, so there are 7–8 pictures per film frame to choose from.
 2. The software keeps the last second of pictures in a ring buffer.
-3. For each click, it picks the picture whose timestamp is closest to **click time + delay**. The delay is the **software timing disk**, set per machine.
+3. For each click, it picks the picture whose timestamp is closest to **click time + delay**. The delay is the **software timing disk**, set per machine. It also absorbs the fixed delay of the camcorder and HDMI adapter.
 4. If no picture falls within the allowed window, the frame is recorded as **failed** and recording stops with an alarm (section 6.4). A previous picture is never reused.
 
 **Calibration screen:** the operator runs a few seconds of film. For several clicks, the screen shows the pictures before and after each click side by side, with a sharpness/motion score under each. The software proposes the best delay from the scores. The operator confirms it or clicks the sharpest picture, and the delay is saved for that machine.
 
 **Fix it later without rescanning (from Velocity):** optionally, the software also keeps the neighbouring pictures (one before and one after each frame). If a reel turns out slightly blurred, the operator changes the delay and the frames are re-picked from the kept neighbours. This triples storage, so it is off by default and on during calibration and test reels.
 
-### 5.5 Triggered mode (upgrade, for cameras with a trigger input)
+### 5.5 Camcorder settings
 
-1. The camera's trigger input is wired to a sync box output pin, through a small opto-isolator if the camera needs one.
-2. For each click, the box sends a trigger pulse to the camera **after the software delay**, when the film is still. The box times this itself, to the microsecond.
-3. The camera takes exactly one picture per pulse. There are no in-between pictures and no calibration by eye.
-4. The box reports every pulse it sent, so the software knows exactly how many pictures should arrive. Each pulse is matched to one picture or recorded as failed.
+- The software picks the video adapter's uncompressed mode (YUYV/NV12) at 1920×1080, 60 frames per second. Compressed modes (MJPEG) are allowed only with a visible "lower quality" warning, and the mode used is recorded in the reel.
+- **Zoom, focus, exposure (shutter and iris) and white balance are set by hand on the camcorder** and left alone: manual mode, auto features and image stabilisation off, clean HDMI (no on-screen display), auto power-off off. The setup guide lists the exact menu settings.
+- The software can't control the camcorder, so it **watches for changes**: if brightness or colour of the picture jumps (auto exposure or white balance left on), the Setup and Scan screens warn.
 
-This mode is supported only for cameras whose trigger mode has been tested and listed in the setup guide. Continuous mode remains available on every camera.
+### 5.6 Two machines, one computer
 
-### 5.6 Camera settings
-
-- The software lists the camera's modes and prefers uncompressed ones (YUYV/NV12). Compressed modes (MJPEG) are allowed with a visible "lower quality" warning, and the mode used is recorded in the reel.
-- Exposure, white balance, gain and focus are set in the Setup screen and **locked** for the scan. If a camera can't lock a setting, the Setup screen warns.
-
-### 5.7 Two machines, one computer
-
-- Each WorkPrinter is a **machine** in the software: one sync box (or syncmouse) plus one camera, paired in the Setup screen. Sync boxes are recognised by their built-in serial number and cameras by their USB serial number or port. Plugging them into different ports doesn't mix up the machines.
+- Each WorkPrinter is a **machine** in the software: one sync box (or syncmouse) plus one camcorder and video adapter, paired in the Setup screen. Sync boxes are recognised by their built-in serial number and video adapters by their USB serial number or port. Plugging them into different ports doesn't mix up the machines.
 - Each machine has its **own capture process**. A problem with one machine never stops or slows the other.
-- Both machines can scan at the same time. The Setup screen checks that both cameras can stream at full rate together. If the USB ports can't sustain both, it says which cable to move.
+- Both machines can scan at the same time. The Setup screen checks that both video feeds can stream at full rate together. If the USB ports can't sustain both, it says which cable to move.
 
 ## 6. Operation
 
@@ -304,12 +298,12 @@ One repository, three parts:
 | Part | Language / runs on | Does |
 |---|---|---|
 | **app** | **Python 3.12** (Ubuntu 24.04), mini PC | Machine registry, sync-box link and clock sync, camera (V4L2), ring buffer, frame picking, saving, journal, accounting, recovery, end-of-gate detection, web page (FastAPI + a simple browser front end), review, export (FFmpeg), alerts (ntfy) |
-| **firmware** | **C (official Raspberry Pi Pico SDK)**, sync box | Switch timestamps, bounce filter, trigger pulses, time sync |
+| **firmware** | **C (official Raspberry Pi Pico SDK)**, sync box | Switch timestamps, bounce filter, time sync |
 | **protocol** | Shared definition | The messages between the app and the sync box, with sequence numbers and checksums |
 
 - **Hardware sits behind small interfaces** (sync source, camera source). Simulated versions of each, including a simulated sync box that speaks the real protocol, plug into the same interfaces for tests and a **Demo Mode**.
 - Capture, saving and the web page run in separate processes with fixed-size queues, so a slow page never costs a frame.
-- The firmware is kept deliberately small. Its logic (bounce filter, trigger timing, time sync) is also compiled and unit-tested on the dev server.
+- The firmware is kept deliberately small. Its logic (bounce filter, time sync) is also compiled and unit-tested on the dev server.
 
 ### 9.2 Security
 
@@ -332,9 +326,9 @@ Using the simulators:
 - Bounce filtering; missed clicks; clicks with no picture → failed frame + fault + alarm.
 - Clock sync: simulated sync box clock offset and drift converge within the limit; excess error raises a fault.
 - Protocol: lost, duplicated or corrupted messages are detected as faults.
-- Firmware logic (bounce filter, trigger timing, time sync) unit-tested on the dev server.
-- Continuous-mode picking: at the correct delay, simulated pull-down blur frames are never chosen. Delay changes pick the expected frames. Neighbour re-picking works.
-- Triggered mode: every pulse is matched to one picture or a failure.
+- Firmware logic (bounce filter, time sync) unit-tested on the dev server.
+- Picture picking: at the correct delay, simulated pull-down blur frames are never chosen. Delay changes pick the expected frames. Neighbour re-picking works.
+- Camcorder setting drift (sudden brightness/colour change) raises a warning.
 - End of reel: an empty gate finishes the reel and alerts; clear leader at the start does not.
 - Faults: camera stall, disk full, overheating, sync box unplugged, operator stop → segment ends, alarm and alert. A fault on one machine doesn't affect the other.
 - Resume: overlapping frames between segments are detected and trimmed.
@@ -345,7 +339,7 @@ Using the simulators:
 ### 10.2 Hardware (owner's equipment)
 
 1. **Mini PC install:** Demo Mode scan and movie.
-2. **Cameras on the bench, no WorkPrinter:** both cameras live at once at full rate, focus, settings lock, test frame.
+2. **Camcorders on the bench, no WorkPrinter:** both live feeds at once at full rate through the Cam Links, clean HDMI (no on-screen display), manual settings hold, test frame.
 3. **Sync box, sync by hand:** tap the RCA wire; each tap = one frame; bounce filter checked; clock-sync error shown and within the limit.
 4. **WorkPrinter 1, test reel:** calibrate the delay, scan at least 500 frames, and inspect every frame by eye: sharp, in order, no gaps or repeats. Check the end-of-reel alert. Watch the movie.
 5. **WorkPrinter 2:** same, with its own settings.
@@ -357,14 +351,14 @@ The system is not called hardware-ready until steps 4–7 pass.
 ## 11. Delivery
 
 - Source code on GitHub (public), with an install script, ready-made firmware file, pinned dependency versions and automated tests.
-- `README.md` as the setup guide for any WorkPrinter owner: parts list, wiring pictures, installation, first scan, calibration, timing-disk reset procedure, tested cameras.
+- `README.md` as the setup guide for any WorkPrinter owner: parts list, wiring pictures, installation, first scan, calibration, timing-disk reset procedure, tested camcorders and video adapters.
 - `CHANGELOG.md` from the first release.
 
 ## 12. Build order
 
 1. **App core, simulators, web page, export:** everything testable on the dev server.
 2. **Firmware** with its logic unit-tested on the dev server, then on a real sync box (bench test 3).
-3. **Cameras on the real mini PC** (bench tests 1–2).
+3. **Camcorders on the real mini PC** (bench tests 1–2).
 4. **Film tests** on both machines (tests 4–7).
 5. **Packaging** and the setup guide.
 
@@ -374,7 +368,7 @@ The system is not called hardware-ready until steps 4–7 pass.
 - HDR (several exposures per frame). Needs a controllable light and camera.
 - LED light retrofit for bulb machines (steady light, less heat, no bulbs to replace; MovieStuff once sold this upgrade).
 - Stepper motor conversion for exact frame-by-frame motion (the sync box could drive a stepper driver).
-- 12-bit industrial (GenICam) cameras.
+- **Triggered industrial cameras** (12-bit colour, global shutter, the sync box fires the shutter): better for rescuing badly faded reels, but about $1,000+ per machine with a suitable zoom lens (see `DECISIONS.md`).
 - Automatic frame alignment on sprocket holes, stabilization.
 - Automatic color restoration, dust and scratch removal.
 - Sound.
@@ -389,6 +383,6 @@ The system is not called hardware-ready until steps 4–7 pass.
 | Two cameras share USB bandwidth | Mini PC chosen with separate USB 3 controllers; Setup screen checks both at full rate together. |
 | One computer runs both machines | Each machine has its own capture process; a problem on one never affects the other. |
 | Clock sync between board and mini PC drifts | Continuous sync, error shown on screen, fault over the limit. |
-| Camera trigger mode doesn't work as advertised | Continuous mode works with any USB camera. |
-| Camera can't lock exposure/white balance | Warn; list tested cameras in the guide. |
+| Camcorder auto features change exposure or colour mid-reel | Manual settings from the setup guide; software warns on sudden changes. |
+| Camcorder processing (sharpening, noise reduction) can't be turned off entirely | Accepted for version 1; the triggered industrial camera upgrade avoids it. |
 | Clear leader or very bright scenes look like an empty gate | End detection only after picture frames have been seen, and requires many consecutive empty frames; thresholds adjustable. |

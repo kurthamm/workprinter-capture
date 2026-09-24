@@ -137,7 +137,7 @@ Found 2026-09-23 via the Wayback Machine index of moviestuff.tv. Key pages: `set
 
 **Capture mode — how the picture for each click is obtained:**
 - **Continuous mode (standard):** the camera streams continuously; for each click the software picks the picture at click time + the per-machine software delay. Works with any USB camera.
-- **Triggered mode (upgrade):** the camera's trigger input is wired to a **sync box output pin**, never directly to the WorkPrinter switch. For each click the box sends one trigger pulse after the per-machine software delay, when the film is still, and matches each pulse to one picture or a recorded failure.
+- **Triggered mode (later upgrade, not in version 1):** the camera's trigger input is wired to a **sync box output pin**, never directly to the WorkPrinter switch. For each click the box sends one trigger pulse after the per-machine software delay, when the film is still, and matches each pulse to one picture or a recorded failure.
 
 Either way every click is accounted for as one saved frame or one recorded failure.
 
@@ -229,10 +229,13 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 ## 8. Open questions
 
 1. **Which XP model the owner has** (owner, 2026-09-23: *"I think both of my units have bulbs"*, so likely the older type; photos to confirm): push buttons in the middle (older), three toggle switches on the back (newer), a control box with R/G/B/M sliders (RGB), or a single light knob (HD). Photos confirm it; it matters for bulb flicker, not for wiring (the machines are not modified).
-2. **XP optics — answered 2026-09-23:** the owner's machines still have the condenser lens box that turns the image 90 degrees for the camcorder. **Decision:** the new camera sits where the camcorder did (MovieStuff: 36–42 inches from the condenser lens, 14× zoom or better) with a **C-mount zoom lens**. No macro lens or extension tubes. Still open: the owner's old camcorder model (to size the zoom range exactly).
-   - **Correction:** the ELP AR0234 baseline camera is **USB 2.0** (Amazon listing: "UVC USB2.0"), too slow for uncompressed full-resolution frames at the XP's roughly 8 frames per second, and it has a small fixed lens. It is dropped as the baseline. The camera must be USB 3, color, global shutter, with a C-mount (or CS-mount) for a zoom lens.
+2. **XP optics — answered 2026-09-23:** the owner's machines still have the condenser lens box that turns the image 90 degrees for the camcorder. **Decision:** the new camera sits where the camcorder did (MovieStuff: 36–42 inches from the condenser lens, 14× zoom or better) zoomed in. No macro lens or extension tubes.
+   - **Correction:** the ELP AR0234 baseline camera is **USB 2.0** (Amazon listing: "UVC USB2.0"), too slow for uncompressed full-resolution frames at the XP's roughly 8 frames per second, and it has a small fixed lens. It is dropped.
 3. **Timing disk position** on the owner's machines (set for an old camcorder, or at the claw-bottom mark).
-4. **Camera purchase:** one USB 3 color global-shutter C-mount camera plus a C-mount zoom lens; exact models chosen once the zoom range is sized (item 2).
+4. **Camera — recommended 2026-09-23, awaiting owner go-ahead: a modern camcorder as a live video feed.** **Panasonic HC-V800** (1080p60, 24× Leica zoom, 1/2.5" BSI sensor, manual controls, clean HDMI; $599.99 new) + **Elgato Cam Link 4K** (HDMI → USB 3, standard Linux video device), per machine.
+   - The owner asked for today's better option than the early-2000s camcorder, and stressed that the camera is **just a live video input**: nothing controls it, and each click grabs the current picture (CineCap's method). The design's "continuous mode" is exactly that and becomes the only version 1 method.
+   - Why a camcorder: the WorkPrinter was designed for one (about 3 ft from the condenser lens box, big zoom; Roger Evans recommended about 18×), so it fits with no lens guesswork. Full HD progressive over uncompressed HDMI is about six times the detail of DV, with no interlace or DV compression.
+   - Rejected on research: industrial camera + C-mount zoom (e.g. Basler acA1440-220uc about $540 used + Computar 12.5–75 mm zoom about $750 new: over $1,000 per machine with uncertain lens fit); mirrorless camera (needs a long lens, costlier, same HDMI path); webcams (no real zoom). Triggered industrial cameras stay a later upgrade for badly faded reels.
 5. **Mini PC choice:** specific model within the spec (8+ cores, 32 GB RAM, hardware video encoding, at least two USB 3 ports on separate controllers).
 6. **License:** MIT recommended, so other WorkPrinter owners can use and improve it.
 
@@ -298,7 +301,7 @@ One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a smal
 | USB cable for the Pico (Micro-USB to USB-A or USB-C) | Sync box to mini PC, up to 5 m |
 | RCA cable male–male (about 6 ft) | WorkPrinter sync socket to the adapter |
 | RCA female to screw-terminal adapter | Search "RCA female to screw terminal" |
-| USB 3 color global-shutter C-mount camera + C-mount zoom lens | Sits where the camcorder did, pointed into the condenser lens box; models to be chosen (section 8, item 2) |
+| Panasonic HC-V800 camcorder + tripod + Elgato Cam Link 4K + HDMI cable | Sits where the old camcorder did, pointed into the condenser lens box (section 8, items 2 and 4) |
 | USB 3 cable, or active USB 3 extension if over about 3 m | Camera to mini PC |
 
 **One for both machines:**
