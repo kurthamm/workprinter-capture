@@ -232,7 +232,7 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 2. **XP optics — answered 2026-09-23:** the owner's machines still have the condenser lens box that turns the image 90 degrees for the camcorder. **Decision:** the new camera sits where the camcorder did (MovieStuff: 36–42 inches from the condenser lens, 14× zoom or better) with a **C-mount zoom lens**. No macro lens or extension tubes. Still open: the owner's old camcorder model (to size the zoom range exactly).
    - **Correction:** the ELP AR0234 baseline camera is **USB 2.0** (Amazon listing: "UVC USB2.0"), too slow for uncompressed full-resolution frames at the XP's roughly 8 frames per second, and it has a small fixed lens. It is dropped as the baseline. The camera must be USB 3, color, global shutter, with a C-mount (or CS-mount) for a zoom lens.
 3. **Timing disk position** on the owner's machines (set for an old camcorder, or at the claw-bottom mark).
-4. **Camera purchase:** start with one ELP AR0234; confirm its trigger mode works.
+4. **Camera purchase:** one USB 3 color global-shutter C-mount camera plus a C-mount zoom lens; exact models chosen once the zoom range is sized (item 2).
 5. **Mini PC choice:** specific model within the spec (8+ cores, 32 GB RAM, hardware video encoding, at least two USB 3 ports on separate controllers).
 6. **License:** MIT recommended, so other WorkPrinter owners can use and improve it.
 
@@ -298,7 +298,7 @@ One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a smal
 | USB cable for the Pico (Micro-USB to USB-A or USB-C) | Sync box to mini PC, up to 5 m |
 | RCA cable male–male (about 6 ft) | WorkPrinter sync socket to the adapter |
 | RCA female to screw-terminal adapter | Search "RCA female to screw terminal" |
-| USB 3 global-shutter camera (baseline ELP AR0234) + macro/close-up lens | Mount designed after inspecting the machine |
+| USB 3 color global-shutter C-mount camera + C-mount zoom lens | Sits where the camcorder did, pointed into the condenser lens box; models to be chosen (section 8, item 2) |
 | USB 3 cable, or active USB 3 extension if over about 3 m | Camera to mini PC |
 
 **One for both machines:**
