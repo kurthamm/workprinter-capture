@@ -392,7 +392,8 @@ Resolve needs a discrete GPU (4 GB minimum; Nvidia with 6 GB or more recommended
 
 ### 12.5 The other core decisions (owner agreed 2026-10-11)
 
-1. **Who edits:** the owner, in Resolve, with a written step-by-step for this exact workflow. The narration and family knowledge are the owner's.
+1. **Who edits:** nobody has to. *(Refined 2026-10-11: the owner said "I don't need to edit like crop or splice or join, I just need to run it through a process to digitally clean up old film.")* Cropping is the scan app's job; **joining several reels into one movie is added to the scan app's export**; Resolve Studio is used only as the cleanup step, with a saved preset the developer builds (open reel, apply preset, export). Narration and music stay optional, in Resolve, whenever the owner wants.
+   - **Cleanup tool research (2026-10-11):** "AI" tools (Topaz Video AI, now $299/year; UniFab; TensorPix) sharpen, denoise and upscale but do not really remove dust and scratches. Professional archive tools (VIVA by Algosoft, DustBuster+, Diamant) do, at thousands of dollars. **Resolve Studio ($295 once)** has deflicker, automatic dirt removal, Dust Buster, noise reduction and stabilization, the right set at the right price. Film9 (free, 8mm-specific, unmaintained since about 2015) is a possible free first pass.
 2. **The scan app does not restore.** Resolve does it better. The app's job is a perfect scan and a clean handoff (one editing file per reel, with reel metadata).
 3. **Finished product:** an MP4 per reel and one assembled family film on USB, plus DVDs for relatives. Blu-ray on request.
 4. **Backup is mandatory.** The scan is irreplaceable work: frames and masters get a second copy (second drive or cloud).

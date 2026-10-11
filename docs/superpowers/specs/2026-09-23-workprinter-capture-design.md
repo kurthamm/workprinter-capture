@@ -284,6 +284,7 @@ reels/
 | **Editing (ProRes 422 HQ in MOV)** | For Premiere, DaVinci Resolve, Final Cut. |
 
 - Speeds: 16, 18, 24 fps or custom; several speeds and formats per reel.
+- **Join reels:** pick several reels in order and export them as one movie, so no editor is needed to make a complete film.
 - One film frame = one video frame. Length = frames ÷ speed (1,800 frames at 18 fps = 100 seconds). No frame blending, no added frames.
 - Before encoding, every frame in the range must exist and open. Gaps block the export and are listed.
 - After encoding, the frame count and length are checked.
