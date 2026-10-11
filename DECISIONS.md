@@ -449,3 +449,13 @@ Owner: *"I tried this business previously and I didn't take the WorkPrinter guy'
 **Hardware consequence:** the free Resolve covers per-reel color correction, so the graphics card and Resolve Studio stay deferred. Minimum list unchanged.
 
 Sources: [Legacybox pricing](https://legacybox.com/pages/pricing), [iMemories vs Costco](https://pixoneye.com/imemories-vs-costco/), [Walmart film transfer](https://www.walmart.com/c/kp/transfer-8mm-film-digital), [Just8mm pricing](https://just8mm.com/pricing/), [ScanCafe Super 8](https://www.scancafe.com/services/movies/super-8-digital-conversion), [EverPresent 8mm](https://everpresent.com/home-movies-to-digital/8mm-film-reel-to-dvd-transfer-service/), [Nostalgic Media](https://nostalgicmedia.com/pages/film-transfer-service), [Feather Cottage price list](https://thefeathercottage.com/film-to-digital-services-price-list/), [Video Conversion Experts 8mm](https://www.videoconversionexperts.com/transfer-8mm-film-to-dvd-and-digital/), [Pro8mm scan pricing](https://www.pro8mm.com/products/scan-super-8mm-8mm-to-digital), [Cinelab pricing](https://www.cinelab.com/pricing), [8mm transfer cost guide](https://www.videoconversionexperts.com/understanding-the-costs-of-8mm-film-transfer-services-a-complete-guide-to-8mm-film-transfer-cost/)
+
+### 12.11 Time and revenue per reel (2026-10-11)
+
+WorkPrinter scans at about 8 frames/s: 50 ft Super 8 = 3,600 frames = 7.5 min; 400 ft = 28,800 frames = 60 min (not 25: that is viewing time at 18 fps). Scanning is walk-away machine time.
+
+Hands-on per reel, including the owner's cleaning pass through solution on rewinds: 50 ft about 15–17 min (clean 4–5, inspect/splices 2–3, thread and check exposure 3, unload/rewind/label 4, check scan 2); 400 ft about 30 min. Plus 15–20 min per order (intake, DVD, packaging).
+
+Throughput, one WorkPrinter: small reels about 4/hour if the next reel is cleaned while the current one scans (2.5/hour if not); 400 ft reels 1/hour. Revenue at $0.75/ft: small reels $95–150/hour, large reels $300/hour. Small reels are the weak spot and the most common order.
+
+**Pricing fix:** per foot plus a per-reel handling charge covering cleaning and threading: **$0.60/ft + $15/reel** (50 ft $45, 200 ft $135, 400 ft $255), minimum order $75. Small reels then about $180/hour overlapped. Owner to test whether local customers will pay $45 for a 3-inch reel before spending beyond the PC.
