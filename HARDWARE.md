@@ -11,9 +11,9 @@ Changes from the spec, 2026-10-11:
 
 Build and prove the system on one WorkPrinter, then copy the per-machine kit for the second.
 
-1. **Phase 1, bench test on the Pi 5:** Pico 2 H, breakout board, box, RCA cable + adapter, micro-USB cable, one Cam Link 4K. About $150.
-2. **Phase 2, first camera:** HC-V900 camcorder, tripod, micro-HDMI cable. About $800.
-3. **Phase 3, the real computer:** Minisforum UM890 Pro, 4 TB reel SSD, adapter, Ethernet cable. About $1,100.
+1. **Phase 1, the computer:** Minisforum UM890 Pro, 4 TB reel SSD, adapter, Ethernet cable. About $1,100. Needed first: everything else is tested on it.
+2. **Phase 2, sync box and video input:** Pico 2 H, breakout board, box, RCA cable + adapter, micro-USB cable, one Cam Link 4K. About $150.
+3. **Phase 3, the camera:** HC-V900 camcorder, tripod, micro-HDMI cable. About $800.
 4. **Phase 4, second WorkPrinter:** a second per-machine kit. About $930.
 
 ## Per WorkPrinter (one set now, a second set in phase 4)
@@ -41,17 +41,12 @@ Build and prove the system on one WorkPrinter, then copy the per-machine kit for
 | [ ] | Ethernet cable to the home router | Wi-Fi works, but wired is more reliable for the web page | $10 | any |
 | [ ] | Monitor, keyboard, mouse (optional) | Only if you want the web page on the mini PC itself | reuse | — |
 
-## Already have
-
-| Item | Use |
-|---|---|
-| Raspberry Pi 5, 8 GB | Bench test machine: runs the app with one Pico kit and one Cam Link before the mini PC is bought. Later a status screen or ntfy host. Not a replacement for the mini PC (no hardware encoder; two 1080p60 feeds + PNG saving is at its limit) |
-
 ## Not needed (fallback only)
 
 | Item | Why it's listed |
 |---|---|
 | Active PS/2-to-USB converter for the old syncmouse | No-wiring fallback. Not needed with the sync box. Good active converters cost $130+; skip |
+| Owner's Raspberry Pi 5 (8 GB) | Not used. Different CPU and USB layout from the mini PC, so nothing tested on it carries over; software is tested on the dev server, hardware on the mini PC |
 
 ## Rough total
 
@@ -66,4 +61,3 @@ Build and prove the system on one WorkPrinter, then copy the per-machine kit for
 
 | Date | Item | Qty | Notes |
 |---|---|---|---|
-| 2026-10-11 | Raspberry Pi 5, 8 GB | 1 | Already owned |
