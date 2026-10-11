@@ -201,7 +201,7 @@ This is CineCap's method: the camera is a live video feed, and each click says "
 
 With the machine **Ready** (camera streaming, storage space, sync box and clock sync, or syncmouse, all checked and shown green), the operator starts the WorkPrinter with its own switches. The first frame click starts a new reel and recording begins automatically.
 
-Optionally, the operator presses **New Reel** first to enter a name, film type and notes. Otherwise the reel is named with the machine and date/time (for example `WorkPrinter 1 — 2026-10-04 14:32`) and can be renamed later.
+Optionally, the operator presses **New Reel** first to enter a name, film type, notes, and the **customer name and job number** (this is a conversion business; every reel belongs to an order). Otherwise the reel is named with the machine and date/time (for example `WorkPrinter 1 — 2026-10-04 14:32`) and can be renamed later.
 
 ### 6.2 While scanning
 
@@ -285,6 +285,8 @@ reels/
 
 - Speeds: 16, 18, 24 fps or custom; several speeds and formats per reel.
 - **Join reels:** pick several reels in order and export them as one movie, so no editor is needed to make a complete film.
+- **Order deliverable:** for a job number, produce the customer's deliverable in one step: a folder of MP4s (one per reel, plus the joined film) for a thumb drive, or a DVD-Video image with a simple menu for burning. (DVD authoring may call a free external tool; the first version can hand the MP4s to DVDStyler.)
+- **After delivery:** a reel's frames can be deleted (with confirmation) once the order is accepted, keeping only the masters and exports, so the reel drive stays ahead of the work.
 - One film frame = one video frame. Length = frames ÷ speed (1,800 frames at 18 fps = 100 seconds). No frame blending, no added frames.
 - Before encoding, every frame in the range must exist and open. Gaps block the export and are listed.
 - After encoding, the frame count and length are checked.

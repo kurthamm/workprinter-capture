@@ -418,3 +418,13 @@ See `HARDWARE.md`. Added: Blu-ray/DVD burner (Pioneer BDR-XD08 or ASUS BW-16D1X-
 ### 12.8 Lighting (2026-10-11)
 
 Owner asked about lighting and quality, but *"I do not want to go overboard and significantly modify the original film; that film look is the cool part."* **Decision: keep the bulb.** The lamp does not make the film look (grain, softness, fading are in the film); it only has to let the camera see the film accurately. Settings, nothing to buy: camcorder shutter 1/60 or 1/120 (flicker-safe on 60 Hz mains), white balance set once on a blank gate and locked, exposure slightly dark to protect highlights. LED retrofit only if the bulb dies with no replacement or flicker proves untameable. The Resolve cleanup preset removes damage only (flicker, dirt, scratches, weave, fading): no sharpening, no heavy noise reduction, grain kept. Still needed: photos of the lamp area to identify the bulb and list a spare.
+
+### 12.9 It's a business; minimum spend to the first order (2026-10-11)
+
+Owner: *"We have no business or orders or anything. We need to spend the minimum amount of money to get this thing working. The first couple of orders will be simple. Convert and put on DVD or thumb drive."*
+
+**Decisions:**
+- The first deliverable is **convert → MP4 → DVD or thumb drive.** No restoration, no graphics card, no Resolve Studio until a customer pays for restoration as an add-on service.
+- **Minimum hardware** (`HARDWARE.md`, top section): the OptiPlex 5090 as-is (Intel built-in graphics encodes the MP4s; its 2 TB drive holds ~16 reels of frames), sync box parts, Cam Link 4K, a **used HC-V770/HC-V800** instead of a new V900, a $30 USB DVD writer. About $650–800 total.
+- **Software is free:** the scan app, DVDStyler for DVDs with a menu, Resolve free only if a color fix is needed.
+- **App consequences** (spec): each reel carries a **customer name and job number**; the export produces a **per-order deliverable** (a DVD image, or a folder of MP4s for a thumb drive); frames are deleted after delivery is accepted to keep the drive ahead of the work.

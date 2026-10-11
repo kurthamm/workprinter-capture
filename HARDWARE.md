@@ -9,7 +9,33 @@ Decisions reflected here (2026-10-11):
 - **Panasonic HC-V800 is discontinued**; the **HC-V900** ($700) replaces it.
 - **One WorkPrinter first.** Buying used on shopgoodwill.com where it makes sense.
 
-## Buying used vs new
+## Minimum to the first paying order (2026-10-11)
+
+Owner: *"We have no business or orders or anything. We need to spend the minimum amount of money to get this thing working. The first couple of orders will be simple. Convert and put on DVD or thumb drive."* Everything below this section is the fuller list for later; **this is what to buy now.**
+
+| Have? | Item | Approx. price | Notes |
+|---|---|---|---|
+| [ ] | Dell OptiPlex 5090 (bid placed) | ≤$250 | Built-in Intel graphics makes the MP4s; the 2 TB drive holds ~16 reels of frames. No graphics card, RAM or SSD yet |
+| [ ] | Raspberry Pi Pico 2 H | $6 | |
+| [ ] | Screw-terminal breakout board for Pico | $10–20 | |
+| [ ] | Small project box | $8 | |
+| [ ] | Micro-USB data cable, 6 ft | $8 | |
+| [ ] | RCA cable male–male, 6 ft | $6 | |
+| [ ] | RCA female to screw-terminal adapter | $6 | |
+| [ ] | Elgato Cam Link 4K | $60 used / $100 new | Listing must say "4K" |
+| [ ] | Camcorder, used Panasonic HC-V770 or HC-V800 | $250–350 | Same family as the V900, same 1080p60 HDMI. Must power on, charger included, micro-HDMI port intact. **Ask first whether the owner already has any HDMI camcorder** |
+| [ ] | Tripod | reuse | |
+| [ ] | Micro-HDMI to HDMI cable, 6 ft | $10 | |
+| [ ] | Ethernet cable | $10 | |
+| [ ] | USB DVD writer (LG GP65 or similar) | $30 | |
+| [ ] | Blank DVD-R, 25 | $15 | |
+| [ ] | Thumb drives | $5 each | Charged to the customer |
+
+**Total: about $650–800.** Software is free: the scan app, DVDStyler (DVD with menu), Resolve free if a color fix is ever needed.
+
+**Deferred until a customer pays for it:** graphics card + Resolve Studio ($450–600, becomes a paid "restoration" service), Blu-ray burner and M-DISC, microphone, 4 TB reel and backup drives, extra RAM, second WorkPrinter kit.
+
+## Fuller list (for later): buying used vs new
 
 | Buy used (shopgoodwill) | Buy new | Why |
 |---|---|---|
