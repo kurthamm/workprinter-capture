@@ -32,6 +32,12 @@ Changes from the spec, 2026-10-11:
 | [ ] | Ethernet cable to the home router | Wi-Fi works, but wired is more reliable for the web page | $10 | any |
 | [ ] | Monitor, keyboard, mouse (optional) | Only if you want the web page on the mini PC itself | reuse | — |
 
+## Already have
+
+| Item | Use |
+|---|---|
+| Raspberry Pi 5, 8 GB | Bench test machine: runs the app with one Pico kit and one Cam Link before the mini PC is bought. Later a status screen or ntfy host. Not a replacement for the mini PC (no hardware encoder; two 1080p60 feeds + PNG saving is at its limit) |
+
 ## Not needed (fallback only)
 
 | Item | Why it's listed |
@@ -51,3 +57,4 @@ Changes from the spec, 2026-10-11:
 
 | Date | Item | Qty | Notes |
 |---|---|---|---|
+| 2026-10-11 | Raspberry Pi 5, 8 GB | 1 | Already owned |
