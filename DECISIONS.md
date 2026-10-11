@@ -414,3 +414,7 @@ See `HARDWARE.md`. Added: Blu-ray/DVD burner (Pioneer BDR-XD08 or ASUS BW-16D1X-
 - [DVDStyler on Ubuntu](https://ubuntuhandbook.org/index.php/2023/07/install-dvdstyler-3-3-ppa-ubuntu-22-04/)
 - [Blu-ray authoring on Linux (no menu tools)](https://forum.videohelp.com/threads/409753-Free-Blu-Ray-Authoring-Software-with-GUI-for-Linux)
 - [External Blu-ray burners, 2026 review](https://foliumbiosciences.com/best-external-blu-ray-burners-for-home-use/)
+
+### 12.8 Lighting (2026-10-11)
+
+Owner asked about lighting and quality, but *"I do not want to go overboard and significantly modify the original film; that film look is the cool part."* **Decision: keep the bulb.** The lamp does not make the film look (grain, softness, fading are in the film); it only has to let the camera see the film accurately. Settings, nothing to buy: camcorder shutter 1/60 or 1/120 (flicker-safe on 60 Hz mains), white balance set once on a blank gate and locked, exposure slightly dark to protect highlights. LED retrofit only if the bulb dies with no replacement or flicker proves untameable. The Resolve cleanup preset removes damage only (flicker, dirt, scratches, weave, fading): no sharpening, no heavy noise reduction, grain kept. Still needed: photos of the lamp area to identify the bulb and list a spare.
