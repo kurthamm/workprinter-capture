@@ -36,7 +36,7 @@ Before bidding: open the listing and check the description and rear-port photo (
 1. **Phase 1, the computer:** PC tower with Nvidia card, RAM to 32 GB, 4 TB reel SSD, 4 TB backup drive, Ethernet cable. About $500–800 used.
 2. **Phase 2, sync box and video input:** Pico 2 H, breakout board, box, RCA cable + adapter, micro-USB cable, one Cam Link 4K. About $150.
 3. **Phase 3, the camera:** HC-V900 camcorder, tripod, micro-HDMI cable. About $800.
-4. **Phase 4, finishing kit:** Blu-ray/DVD burner, M-DISC blanks, USB microphone. About $200.
+4. **Phase 4, finishing kit:** Blu-ray/DVD burner, M-DISC blanks, USB microphone, Resolve Studio if needed. About $200 (+$295).
 5. **Phase 5, second WorkPrinter:** a second per-machine kit plus the USB 3 PCIe card. About $950.
 
 ## Per WorkPrinter (one set now, a second set in phase 5)
@@ -66,6 +66,7 @@ Before bidding: open the listing and check the description and rear-port photo (
 | [ ] | Blu-ray/DVD burner, external USB, M-DISC | Pioneer BDR-XD08 or ASUS BW-16D1X-U | $100–120 | any |
 | [ ] | M-DISC DVD blanks | Keeper copies for relatives | $30 | any |
 | [ ] | USB microphone | Family narration in Resolve | $50 | any |
+| [ ] | DaVinci Resolve Studio (software) | Start with the free version; Studio ($295 one time) adds deflicker, automatic dirt removal, Dust Buster and noise reduction, which old film usually needs | $295 | blackmagicdesign.com |
 | [ ] | Ethernet cable to the home router | Wired is more reliable for the web page | $10 | any |
 | [ ] | Monitor, keyboard, mouse | Needed: Resolve and disc authoring are desktop work | reuse | — |
 
@@ -83,6 +84,7 @@ Before bidding: open the listing and check the description and rear-port photo (
 |---|---|
 | Per WorkPrinter kit | about $930 |
 | PC + RAM + drives + burner + mic | about $700–1,000 |
+| Resolve Studio (if needed) | $295 |
 | **One WorkPrinter working, discs included (phases 1–4)** | **about $1,700–2,000** |
 | Second WorkPrinter (phase 5) | about $950 |
 
