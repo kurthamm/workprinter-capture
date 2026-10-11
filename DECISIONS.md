@@ -465,3 +465,17 @@ Throughput, one WorkPrinter: small reels about 4/hour if the next reel is cleane
 Owner: *"I really want to open a very small retail space. Computer support and film conversion... I don't see how I can drive business without it. I would have to do a mail order business and that wouldn't work."*
 
 Assessment given: agree that mail order is the big services' game and that film conversion alone can't carry a lease. A storefront works if **computer support is the anchor** (walk-ins, $75–150/hr) and film conversion is the counter add-on, a model that exists in many small towns. Pushback: prove the film side first, from home by appointment and via drop-off partners (camera store, antique shop, senior center), for about three months, before taking on $12–24k/year of fixed cost. Offered to research local rents and repair-shop rates once the town is known.
+
+### 12.13 Northeast Columbia, SC: antique mall booth as the first storefront (2026-10-11)
+
+Owner lives in Northeast Columbia, SC and likes the antique-mall idea: *"Most support multiple small antique businesses or people. I would just be adding a service that they would take a slice from."*
+
+Research:
+- **Ivy House Antiques Mall**, Two Notch Rd at Bookman Rd (½ mile from Village at Sandhill), ~70 vendors, 803-788-8188. **Spring Valley Antique Mall**, 8808 Two Notch Rd, 20+ years, ~10,000 sq ft, 803-736-7575.
+- Typical booth terms (malls generally; confirm locally): ~$1–1.25/sq ft/month ($80–150 small booth) + ~10 % commission on counter sales. Many malls require antique merchandise and may not take custody of drop-offs or sell services at the counter. Plan: stock the booth with old projectors, reels, cameras (the right customers), a small screen looping a restored film, sample DVDs, a price card and phone number; ask each mall whether the counter will accept reel drop-offs and payments.
+- **Local competition:** Palmetto DVD Solutions, West Columbia (8mm, photos, slides). Other "Columbia" results are mail-in firms with local landing pages. Nothing found on the Northeast side.
+- **Small retail rent, Two Notch corridor:** $7.50–20/sq ft/yr + NNN; Diamond Point Shopping Center (8502 Two Notch) small suites from ~$400/month. Cheaper than the earlier $1,000–2,000 estimate, but still: booth first, lease when both businesses are real.
+
+Next: owner calls both malls.
+
+Sources: [Ivy House Antiques Mall](https://www.experiencecolumbiasc.com/listing/ivy-house-antiques-mall/18101/), [Spring Valley Antique Mall (Yelp)](https://www.yelp.com/biz/spring-valley-antique-mall-columbia), [Booth terms example: Holly Antiques](https://www.hollyantiques.com/rent-a-booth), [Booth terms example: Zionsville Antique Mall](http://zionsvilleantiques.com/read-me), [Palmetto DVD Solutions](https://palmettodvdsolutions.com/), [Tillman's Plaza, 7358–7372 Two Notch Rd](https://realmo.com/listing/9196810), [Columbia retail listings (CityFeet)](https://www.cityfeet.com/cont/columbia-sc/retail-space-for-lease)
