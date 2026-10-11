@@ -459,3 +459,9 @@ Hands-on per reel, including the owner's cleaning pass through solution on rewin
 Throughput, one WorkPrinter: small reels about 4/hour if the next reel is cleaned while the current one scans (2.5/hour if not); 400 ft reels 1/hour. Revenue at $0.75/ft: small reels $95–150/hour, large reels $300/hour. Small reels are the weak spot and the most common order.
 
 **Pricing fix:** per foot plus a per-reel handling charge covering cleaning and threading: **$0.60/ft + $15/reel** (50 ft $45, 200 ft $135, 400 ft $255), minimum order $75. Small reels then about $180/hour overlapped. Owner to test whether local customers will pay $45 for a 3-inch reel before spending beyond the PC.
+
+### 12.12 Business shape: small retail space (owner's thinking, 2026-10-11)
+
+Owner: *"I really want to open a very small retail space. Computer support and film conversion... I don't see how I can drive business without it. I would have to do a mail order business and that wouldn't work."*
+
+Assessment given: agree that mail order is the big services' game and that film conversion alone can't carry a lease. A storefront works if **computer support is the anchor** (walk-ins, $75–150/hr) and film conversion is the counter add-on, a model that exists in many small towns. Pushback: prove the film side first, from home by appointment and via drop-off partners (camera store, antique shop, senior center), for about three months, before taking on $12–24k/year of fixed cost. Offered to research local rents and repair-shop rates once the town is known.
