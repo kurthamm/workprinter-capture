@@ -92,3 +92,4 @@ Before bidding: open the listing and check the description and rear-port photo (
 
 | Date | Item | Qty | Notes |
 |---|---|---|---|
+| 2026-10-11 | Dell OptiPlex 5090, i7-11700, 16 GB, 512 GB NVMe + 2 TB HDD, Win 11 Pro | 1 | **Bid placed** on shopgoodwill (Goodwill Central Texas, tested "works well"), cap $250. Not yet won |
