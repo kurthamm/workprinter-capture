@@ -7,6 +7,22 @@ Changes from the spec, 2026-10-11:
 - **Panasonic HC-V800 is discontinued** (B&H: "no longer available"). Replaced by its successor, the **HC-V900** (same 1/2.5" BSI sensor, 24× Leica zoom, 1080p60 over micro-HDMI, released Nov 2024, $700).
 - **Mini PC named: Minisforum UM890 Pro** (Ryzen 9 8945HS, 32 GB, 1 TB, two M.2 slots). Its two USB4 ports sit on a separate controller from its four USB 3.2 ports, so each Cam Link gets its own full-speed path. Fits the spec's requirement.
 
+## Buying used (shopgoodwill.com), 2026-10-11
+
+The owner plans to buy on shopgoodwill. The load is modest, so a used business desktop is enough and has a PCIe slot for a USB 3 card (guaranteed separate controller for camera 2).
+
+| Buy used | Buy new | Why |
+|---|---|---|
+| PC: Dell OptiPlex 7070/7080, HP EliteDesk 800 G5/G6, Lenovo ThinkCentre M720/M920 (tower or SFF, not micro); Intel i5/i7 8th–10th gen; 16 GB min, 32 GB preferred. $100–200 | | Best Linux support there is; PCIe slot and drive bays |
+| Elgato Cam Link 4K (listing must say "4K") | | Common secondhand |
+| Camcorder: HC-V900, or HC-V800 / HC-V770 (same family); must power on, charger included, micro-HDMI port intact | | V900 is too new to be common used |
+| Tripod | | |
+| | 4 TB SATA or NVMe SSD, $200–250 | Reel drive holds the film; used SSDs have unknown wear |
+| | Pico 2 H, breakout, box, RCA cable + adapter, micro-USB cable | Cheap, not resold |
+| | USB 3 PCIe card (~$25), for the second camera | |
+
+The Minisforum UM890 Pro below stays as the new-purchase alternative.
+
 ## Plan: one WorkPrinter first (2026-10-11)
 
 Build and prove the system on one WorkPrinter, then copy the per-machine kit for the second.
