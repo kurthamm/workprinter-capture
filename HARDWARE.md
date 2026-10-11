@@ -1,77 +1,90 @@
 # Hardware list and purchase tracker
 
-Agreed list for the owner's two WorkPrinter XP machines (spec revision 3, `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`).
+Agreed list for the owner's two WorkPrinter XP machines (spec revision 4, Windows; `DECISIONS.md` section 12).
 Tick the box when the item is in hand. Prices are US street prices checked 2026-10-11 and are approximate.
 
-Changes from the spec, 2026-10-11:
-- **Panasonic HC-V800 is discontinued** (B&H: "no longer available"). Replaced by its successor, the **HC-V900** (same 1/2.5" BSI sensor, 24× Leica zoom, 1080p60 over micro-HDMI, released Nov 2024, $700).
-- **Mini PC named: Minisforum UM890 Pro** (Ryzen 9 8945HS, 32 GB, 1 TB, two M.2 slots). Its two USB4 ports sit on a separate controller from its four USB 3.2 ports, so each Cam Link gets its own full-speed path. Fits the spec's requirement.
+Decisions reflected here (2026-10-11):
+- **Windows 11** on one tower PC that does everything: scan, DaVinci Resolve restoration/editing, disc burning.
+- **Nvidia graphics card, 6 GB or more, and 32 GB RAM** are required (Resolve). The mini PC idea is dropped (no card slot).
+- **Panasonic HC-V800 is discontinued**; the **HC-V900** ($700) replaces it.
+- **One WorkPrinter first.** Buying used on shopgoodwill.com where it makes sense.
 
-## Buying used (shopgoodwill.com), 2026-10-11
+## Buying used vs new
 
-The owner plans to buy on shopgoodwill. The load is modest, so a used business desktop is enough and has a PCIe slot for a USB 3 card (guaranteed separate controller for camera 2).
-
-| Buy used | Buy new | Why |
+| Buy used (shopgoodwill) | Buy new | Why |
 |---|---|---|
-| PC: Dell OptiPlex 7070/7080, HP EliteDesk 800 G5/G6, Lenovo ThinkCentre M720/M920 (tower or SFF, not micro); Intel i5/i7 8th–10th gen; 16 GB min, 32 GB preferred. $100–200 | | Best Linux support there is; PCIe slot and drive bays |
+| **PC tower**: 8-core Intel i7 (8th gen or newer) or Ryzen 7; Nvidia card 6 GB+ (RTX 2060 / GTX 1660 Super / RTX 3060); 32 GB RAM (or 16 GB + add 16 GB new, ~$30); Windows license on the board | | Resolve needs the card; a tower has the slots and drive bays |
 | Elgato Cam Link 4K (listing must say "4K") | | Common secondhand |
 | Camcorder: HC-V900, or HC-V800 / HC-V770 (same family); must power on, charger included, micro-HDMI port intact | | V900 is too new to be common used |
 | Tripod | | |
-| | 4 TB SATA or NVMe SSD, $200–250 | Reel drive holds the film; used SSDs have unknown wear |
+| | 4 TB SSD (reel drive), $200–250 | Holds the film; used SSDs have unknown wear |
+| | 4 TB backup drive (USB or internal), $100–150 | Second copy of the scan; mandatory |
 | | Pico 2 H, breakout, box, RCA cable + adapter, micro-USB cable | Cheap, not resold |
-| | USB 3 PCIe card (~$25), for the second camera | |
+| | USB 3 PCIe card (~$25), for the second camera later | |
+| | Blu-ray/DVD burner with M-DISC (Pioneer BDR-XD08 or ASUS BW-16D1X-U), $100–120 | |
+| | M-DISC DVD blanks | Keeper copies |
+| | USB microphone (~$50) | Narration in Resolve |
 
-The Minisforum UM890 Pro below stays as the new-purchase alternative.
+**Candidates from the owner's shopgoodwill listing (2026-10-11):**
+1. **iBUYPOWER i-Series, i7-9700F, RTX 2060, 16 GB, no SSD** (~$151 at the time). Has the card now. Add 16 GB RAM + the new SSD. Gaming case, more noise.
+2. **Dell OptiPlex 5090 tower**, i7 10th/11th gen, 16 GB (~$178). Quieter office box; add a used RTX 3060 12 GB (~$180) and 16 GB RAM. Must be the tower, not the small form factor.
 
-## Plan: one WorkPrinter first (2026-10-11)
+Before bidding: open the listing and check the description and rear-port photo (tower vs small form factor, powers on, ports).
 
-Build and prove the system on one WorkPrinter, then copy the per-machine kit for the second.
+## Plan: one WorkPrinter first
 
-1. **Phase 1, the computer:** Minisforum UM890 Pro, 4 TB reel SSD, adapter, Ethernet cable. About $1,100. Needed first: everything else is tested on it.
+1. **Phase 1, the computer:** PC tower with Nvidia card, RAM to 32 GB, 4 TB reel SSD, 4 TB backup drive, Ethernet cable. About $500–800 used.
 2. **Phase 2, sync box and video input:** Pico 2 H, breakout board, box, RCA cable + adapter, micro-USB cable, one Cam Link 4K. About $150.
 3. **Phase 3, the camera:** HC-V900 camcorder, tripod, micro-HDMI cable. About $800.
-4. **Phase 4, second WorkPrinter:** a second per-machine kit. About $930.
+4. **Phase 4, finishing kit:** Blu-ray/DVD burner, M-DISC blanks, USB microphone. About $200.
+5. **Phase 5, second WorkPrinter:** a second per-machine kit plus the USB 3 PCIe card. About $950.
 
-## Per WorkPrinter (one set now, a second set in phase 4)
+## Per WorkPrinter (one set now, a second set in phase 5)
 
 | Have? | Item | Spec / notes | Approx. price | Where |
 |---|---|---|---|---|
 | [ ] | Panasonic HC-V900 camcorder (HC-V900K) | Live video feed, 1080p60 HDMI. AC adapter included; confirm on arrival | $700 | B&H, Panasonic |
 | [ ] | Tripod | Sturdy, pan/tilt head, ~36–42 in from the condenser box. Reuse an old one if solid | $60–100 | any |
-| [ ] | Elgato Cam Link 4K | HDMI → USB 3; standard Linux video device | $100 | Elgato, B&H, Amazon |
+| [ ] | Elgato Cam Link 4K | HDMI → USB 3; standard USB video device | $100 | Elgato, B&H, Amazon, used |
 | [ ] | Micro-HDMI to HDMI cable, 6 ft | Camcorder → Cam Link. One may be in the camcorder box | $10 | any |
-| [ ] | USB-C (male) to USB-A (female) adapter, USB 3.1 Gen 2 rated | Only one is needed: lets the second Cam Link use a USB4 port. Buy two to have a spare | $10 | any |
 | [ ] | Raspberry Pi Pico 2 H | Headers fitted, no soldering. The sync box | $6 | Adafruit, Pimoroni, PiShop |
 | [ ] | Screw-terminal breakout board for Pico | e.g. Adafruit 5095 or 52Pi terminal board; Pico 2 is pin-compatible with Pico | $10–20 | Adafruit, Pi Hut, Amazon |
 | [ ] | Small project box | Holds the Pico and breakout; one hole for RCA, one for USB | $8 | any |
-| [ ] | Micro-USB data cable, 6 ft | Sync box → mini PC. Must be a data cable, not charge-only | $8 | any |
+| [ ] | Micro-USB data cable, 6 ft | Sync box → PC. Must be a data cable, not charge-only | $8 | any |
 | [ ] | RCA cable, male–male, 6 ft | WorkPrinter sync socket → sync box | $6 | any |
 | [ ] | RCA female to screw-terminal adapter | Inside the sync box | $6 | Amazon ("RCA female to screw terminal") |
 
-## One for both machines
+## One for everything
 
 | Have? | Item | Spec / notes | Approx. price | Where |
 |---|---|---|---|---|
-| [ ] | Minisforum UM890 Pro, 32 GB RAM, 1 TB SSD | Ryzen 9 8945HS, 2× USB4 + 4× USB 3.2, two M.2 slots. Runs everything | $650–800 | Minisforum, Best Buy |
-| [ ] | 4 TB NVMe SSD (M.2 2280) | Reel drive, goes in the second M.2 slot. e.g. WD Black SN850X 4 TB or Samsung 990 Pro 4 TB | $300–380 | any |
-| [ ] | Ethernet cable to the home router | Wi-Fi works, but wired is more reliable for the web page | $10 | any |
-| [ ] | Monitor, keyboard, mouse (optional) | Only if you want the web page on the mini PC itself | reuse | — |
+| [ ] | PC tower, Windows 11 | 8-core, Nvidia 6 GB+, 32 GB RAM (see candidates above) | $150–350 used + RAM | shopgoodwill |
+| [ ] | 16 GB RAM upgrade (if the PC has 16 GB) | Match the PC's memory type (DDR4) | $30 | any |
+| [ ] | 4 TB SSD, reel drive | SATA or NVMe, whichever the PC has free | $200–250 | any |
+| [ ] | 4 TB backup drive | USB or internal; second copy of frames and masters | $100–150 | any |
+| [ ] | USB 3 PCIe card | For the second camera (phase 5) | $25 | any |
+| [ ] | Blu-ray/DVD burner, external USB, M-DISC | Pioneer BDR-XD08 or ASUS BW-16D1X-U | $100–120 | any |
+| [ ] | M-DISC DVD blanks | Keeper copies for relatives | $30 | any |
+| [ ] | USB microphone | Family narration in Resolve | $50 | any |
+| [ ] | Ethernet cable to the home router | Wired is more reliable for the web page | $10 | any |
+| [ ] | Monitor, keyboard, mouse | Needed: Resolve and disc authoring are desktop work | reuse | — |
 
-## Not needed (fallback only)
+## Not needed
 
 | Item | Why it's listed |
 |---|---|
 | Active PS/2-to-USB converter for the old syncmouse | No-wiring fallback. Not needed with the sync box. Good active converters cost $130+; skip |
-| Owner's Raspberry Pi 5 (8 GB) | Not used. Different CPU and USB layout from the mini PC, so nothing tested on it carries over; software is tested on the dev server, hardware on the mini PC |
+| Owner's Raspberry Pi 5 (8 GB) | Not used. Software is tested on the dev server, hardware on the Windows PC |
+| Minisforum UM890 Pro mini PC | Dropped: no graphics card slot |
 
 ## Rough total
 
 | | |
 |---|---|
-| Per machine | about $930 |
-| Mini PC + reel drive + cable | about $1,100 |
-| **One WorkPrinter working (phases 1–3)** | **about $2,050** |
-| Second WorkPrinter (phase 4) | about $930 |
+| Per WorkPrinter kit | about $930 |
+| PC + RAM + drives + burner + mic | about $700–1,000 |
+| **One WorkPrinter working, discs included (phases 1–4)** | **about $1,700–2,000** |
+| Second WorkPrinter (phase 5) | about $950 |
 
 ## Purchase log
 

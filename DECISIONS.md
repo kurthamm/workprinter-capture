@@ -3,7 +3,7 @@
 Strategic decisions for the Movie Stuff project, with the reasoning and research behind them.
 Recorded 2026-09-23 (first planning session). Nothing has been built yet.
 
-> **Current design (read this first):** WorkPrinter XP + **one mini PC** for both machines + a **USB camera** and a small **USB sync box (Raspberry Pi Pico 2)** on each machine, operated from a web browser. **The WorkPrinters are not modified.** See section 10 and the spec `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`. Earlier sections record how the thinking got there; where they mention Windows, a Raspberry Pi 5 per machine, or the syncmouse as the standard, section 10 supersedes them.
+> **Current design (read this first):** WorkPrinter XP + **one Windows 11 PC** (tower, Nvidia graphics card) for both machines + a **camcorder as a live video feed** and a small **USB sync box (Raspberry Pi Pico 2)** on each machine, operated from a web browser. **The WorkPrinters are not modified.** The scan app is one stage of a three-stage process: scan → restore and assemble in DaVinci Resolve → deliver as MP4 and DVD. See **section 12** (end-to-end process and Windows, 2026-10-11), section 10 (sync boxes, no modification) and the spec `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`. Earlier sections record how the thinking got there; where they mention Linux/Ubuntu, a mini PC, a Raspberry Pi 5 per machine, or the syncmouse as the standard, sections 10 and 12 supersede them.
 
 ---
 
@@ -232,23 +232,24 @@ The owner supplied `WorkPrinter_Windows_Requirements_v2.md` (Revision 2.0, 2026-
 2. **XP optics — answered 2026-09-23:** the owner's machines still have the condenser lens box that turns the image 90 degrees for the camcorder. **Decision:** the new camera sits where the camcorder did (MovieStuff: 36–42 inches from the condenser lens, 14× zoom or better) zoomed in. No macro lens or extension tubes.
    - **Correction:** the ELP AR0234 baseline camera is **USB 2.0** (Amazon listing: "UVC USB2.0"), too slow for uncompressed full-resolution frames at the XP's roughly 8 frames per second, and it has a small fixed lens. It is dropped.
 3. **Timing disk position** on the owner's machines (set for an old camcorder, or at the claw-bottom mark).
-4. **Camera — recommended 2026-09-23, awaiting owner go-ahead: a modern camcorder as a live video feed.** **Panasonic HC-V800** (1080p60, 24× Leica zoom, 1/2.5" BSI sensor, manual controls, clean HDMI; $599.99 new) + **Elgato Cam Link 4K** (HDMI → USB 3, standard Linux video device), per machine.
+4. **Camera — recommended 2026-09-23, awaiting owner go-ahead: a modern camcorder as a live video feed.** *(2026-10-11: the HC-V800 is discontinued; its successor the **HC-V900** ($700, same sensor and zoom, 1080p60 HDMI) replaces it. See `HARDWARE.md`.)* **Panasonic HC-V800** (1080p60, 24× Leica zoom, 1/2.5" BSI sensor, manual controls, clean HDMI; $599.99 new) + **Elgato Cam Link 4K** (HDMI → USB 3, standard Linux video device), per machine.
    - The owner asked for today's better option than the early-2000s camcorder, and stressed that the camera is **just a live video input**: nothing controls it, and each click grabs the current picture (CineCap's method). The design's "continuous mode" is exactly that and becomes the only version 1 method.
    - Why a camcorder: the WorkPrinter was designed for one (about 3 ft from the condenser lens box, big zoom; Roger Evans recommended about 18×), so it fits with no lens guesswork. Full HD progressive over uncompressed HDMI is about six times the detail of DV, with no interlace or DV compression.
    - Rejected on research: industrial camera + C-mount zoom (e.g. Basler acA1440-220uc about $540 used + Computar 12.5–75 mm zoom about $750 new: over $1,000 per machine with uncertain lens fit); mirrorless camera (needs a long lens, costlier, same HDMI path); webcams (no real zoom). Triggered industrial cameras stay a later upgrade for badly faded reels.
-5. **Mini PC choice:** specific model within the spec (8+ cores, 32 GB RAM, hardware video encoding, at least two USB 3 ports on separate controllers).
+5. **PC choice — answered 2026-10-11 (section 12):** a used Windows tower with an Nvidia card (6 GB+), 8 cores, 32 GB RAM, from shopgoodwill. Candidates and the shopping plan are in `HARDWARE.md`.
 6. **License:** MIT recommended, so other WorkPrinter owners can use and improve it.
 
 ---
 
-## 9. Next steps
+## 9. Next steps (updated 2026-10-11)
 
-1. Owner reviews the version 1 spec (revision 3, one mini PC + sync boxes, WorkPrinters not modified): `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md`.
-2. Write the step-by-step implementation plan.
-3. Build the app core, simulators, web page and export on the dev server; write and unit-test the sync box firmware.
-4. Owner buys parts (section 10.4); bench-test the mini PC with both cameras and a sync box.
+1. Owner buys the PC and parts for **one** WorkPrinter first (`HARDWARE.md`, phases 1–3).
+2. Write the step-by-step implementation plan from the spec (revision 4).
+3. Build the app core, simulators, web page and export on the dev server; write and unit-test the sync box firmware; Windows video backend tested on GitHub's Windows runners.
+4. First bench test on the owner's PC: Cam Link frame timestamps on Windows (spec 5.2), then the sync box by hand.
 5. Owner sends photos of the WorkPrinter (model, bulb, optics) to design the camera mount.
-6. Film tests on both machines.
+6. Film tests on WorkPrinter 1; then the second kit for WorkPrinter 2.
+7. Write the owner's step-by-step for the Resolve restore/assemble stage and the disc stage (section 12).
 
 ---
 
@@ -351,3 +352,64 @@ One mini PC runs both WorkPrinters. Each WorkPrinter has a USB camera and a smal
 - [Newegg: Arducam OV9782 ($99.99)](https://www.newegg.com/p/3C6-038N-01VG2)
 - [Kinograph forum: DIY 8mm scanner build](https://forums.kinograph.cc/t/8mm-film-scanner-my-build/2574)
 - [Kinograph forum: Pi HQ camera build](https://forums.kinograph.cc/t/my-8mm-super8-scanner-build-in-progress-led-help/2545)
+
+---
+
+## 12. The whole process, and Windows (2026-10-11)
+
+### 12.1 What prompted it
+
+The owner asked for the **entire process** to be considered, not just the scan: *"Converting the 8mm, then creating a video file with audio and then burning that video probably to a DVD."* And: *"are we using Windows OS or Linux?! I don't mind paying for a Windows machine if it makes this easier. There are core decisions you haven't even considered."* Both fair. The Linux choice (section 10) was inherited from the Raspberry Pi design and the dev server, not decided on its merits for the whole job.
+
+### 12.2 The three stages
+
+| Stage | What | Tool | Output |
+|---|---|---|---|
+| 1. Scan | One lossless picture per film frame, every frame accounted for | **This project** (the scan app + sync box) | Per reel: PNG frames, FFV1 archival master, ProRes/DNxHR editing file, quick MP4 |
+| 2. Restore, assemble, add sound | Stabilize frame weave, deflicker, dust and scratch cleanup, color restoration; put reels in order; titles; music and **family narration** | **DaVinci Resolve** (free; what transfer houses use; DustBuster+ plugin available) | One edited "family film" and/or one file per reel |
+| 3. Deliver | Copies people can actually watch | Resolve export + FFmpeg; DVD authoring tool; Blu-ray/DVD burner | **MP4 on USB stick / home server** (main, full HD); **DVD** (standard definition, plays everywhere); Blu-ray only on request |
+
+**Audio:** 8mm home movies are almost all silent. Super 8 *sound* film (1973 on) has a rust-brown magnetic stripe along one edge; the WorkPrinter has no sound head, so any such reels need a professional transfer for their sound. Otherwise sound is added in stage 2: music, and narration recorded by the family. The scan app does not capture audio.
+
+**DVD reality:** 720×480, a quarter of the scanned detail. Still worth making because relatives' players take it. Use M-DISC blanks for keeper copies. Blu-ray keeps full HD, but is less universal.
+
+### 12.3 Decision: Windows 11, one machine
+
+**Decision:** The PC runs **Windows 11** and does all three stages. Linux (Ubuntu) is dropped.
+
+**Why:**
+- **Resolve:** the free Windows version handles ordinary MP4/H.264 and AAC audio; the free Linux version cannot (patent licensing), and Linux needs the proprietary Nvidia driver set up by hand.
+- **Discs:** Windows has proper DVD *and* Blu-ray authoring tools with menus. Linux has DVD only (DVDStyler) and no Blu-ray menu authoring.
+- **Camcorder and Cam Link** are built for Windows first.
+- **The owner** can run Resolve, burn discs and fix things without depending on the developer.
+- **Other WorkPrinter owners** (section 1.1): CineCap was Windows; that is what they have.
+
+**What it costs:** the scan app needs a Windows video backend (Windows Media Foundation) instead of V4L2. Timing precision is not at risk: the sync box does the microsecond work, and the PC only needs usable arrival times for camera frames. That is the **first bench test** on the real PC. Development and automated tests stay on the Linux dev server with simulators; the Windows backend is tested on GitHub's Windows runners and on the owner's PC. More work for the developer, none for the owner.
+
+### 12.4 Decision: graphics card required
+
+Resolve needs a discrete GPU (4 GB minimum; Nvidia with 6 GB or more recommended) and 32 GB RAM. The scan stage alone would not need one (frame saving is CPU; every modern Intel has a built-in H.264 encoder), but stage 2 does, and the later restoration features are GPU work. **The PC is a tower with an Nvidia card of 6 GB+ and 32 GB RAM.** The mini-PC idea (Minisforum UM890 Pro) is dropped: no card slot.
+
+### 12.5 The other core decisions (owner agreed 2026-10-11)
+
+1. **Who edits:** the owner, in Resolve, with a written step-by-step for this exact workflow. The narration and family knowledge are the owner's.
+2. **The scan app does not restore.** Resolve does it better. The app's job is a perfect scan and a clean handoff (one editing file per reel, with reel metadata).
+3. **Finished product:** an MP4 per reel and one assembled family film on USB, plus DVDs for relatives. Blu-ray on request.
+4. **Backup is mandatory.** The scan is irreplaceable work: frames and masters get a second copy (second drive or cloud).
+5. **Audience stays "every WorkPrinter owner."** Windows makes that realistic. Decided on purpose, not by default.
+
+### 12.6 Hardware consequences
+
+See `HARDWARE.md`. Added: Blu-ray/DVD burner (Pioneer BDR-XD08 or ASUS BW-16D1X-U), M-DISC blanks, USB microphone for narration, backup drive. PC pick from the owner's shopgoodwill listing: iBUYPOWER i7-9700F + RTX 2060 (add 16 GB RAM), or an OptiPlex 5090 tower plus a used RTX 3060 12 GB.
+
+### 12.7 Sources
+
+- [Resolve on Linux: free version lacks H.264/AAC; discrete GPU and 32 GB required](https://www.tal.org/tutorials/blackmagic-davinci-resolve-linux)
+- [Resolve system requirements](https://www.miracamp.com/learn/davinci-resolve/system-requirements)
+- [DustBuster+ plugin for Resolve](https://www.hs-art.com/index.php/solutions/dustbusterplus)
+- [8mm restoration workflow overview](https://digitizeyourlife.com/convert-8mm-film-to-digital-complete-guide-for-2026/)
+- [Super 8 film (magnetic stripe sound)](https://en.wikipedia.org/wiki/Super_8_film)
+- [Pro8mm: sync-sound transfers of small-gauge film](https://www.pro8mm.com/blogs/blog/sync-sound-digital-masters-for-super-8-and-other-small-gauge-film)
+- [DVDStyler on Ubuntu](https://ubuntuhandbook.org/index.php/2023/07/install-dvdstyler-3-3-ppa-ubuntu-22-04/)
+- [Blu-ray authoring on Linux (no menu tools)](https://forum.videohelp.com/threads/409753-Free-Blu-Ray-Authoring-Software-with-GUI-for-Linux)
+- [External Blu-ray burners, 2026 review](https://foliumbiosciences.com/best-external-blu-ray-burners-for-home-use/)
