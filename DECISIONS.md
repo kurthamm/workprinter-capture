@@ -428,3 +428,24 @@ Owner: *"We have no business or orders or anything. We need to spend the minimum
 - **Minimum hardware** (`HARDWARE.md`, top section): the OptiPlex 5090 as-is (Intel built-in graphics encodes the MP4s; its 2 TB drive holds ~16 reels of frames), sync box parts, Cam Link 4K, a **used HC-V770/HC-V800** instead of a new V900, a $30 USB DVD writer. About $650–800 total.
 - **Software is free:** the scan app, DVDStyler for DVDs with a menu, Resolve free only if a color fix is needed.
 - **App consequences** (spec): each reel carries a **customer name and job number**; the export produces a **per-order deliverable** (a DVD image, or a folder of MP4s for a thumb drive); frames are deleted after delivery is accepted to keep the drive ahead of the work.
+
+### 12.10 Market research: what conversion services charge (2026-10-11)
+
+Owner: *"I tried this business previously and I didn't take the WorkPrinter guy's advice that this is a premium service. I charged $35 per small reel and I got killed. This is going to be a premium service."*
+
+| Tier | Services | Product | Per 50 ft | Per 400 ft |
+|---|---|---|---|---|
+| Bulk mail-in | Walmart $15.96/50 ft + $0.20/ft; Costco $19.99–29.99 first 150 ft + $0.13/ft; Just8mm $12.99/50, $29.99/200, $49.99/400; Legacybox bundles ≈ $17–35 per item (an item = one reel of any size); Kodak Digitizing Box similar; iMemories $29.99/50 ft list, 50 % promos | Real-time or SD transfer, factory batch processing | $13–30 | $50–100 |
+| Frame-by-frame HD | ScanCafe $0.34/ft; EverPresent $0.32–0.39/ft (+$0.15/ft for 2K); Nostalgic Media from $0.29/ft; Feather Cottage $0.25/ft 2K | True frame scanning HD/2K, basic color, MP4 + USB/DVD add-ons ($20) | $15–25 | $120–200 |
+| Premium | Video Conversion Experts Pro 2K $0.69/ft, Pro 4K $0.99/ft; Pro8mm $0.62–2.00/ft (ProRes, 4K/6.5K); Gamma Ray Digital $43 (2K) / $62 (5K HDR ProRes) per 50 ft roll; "4K premium" generally $1.00–1.50/ft | Frame-by-frame 2K–4K, scene-by-scene color correction, pro file formats, hand-fed film | $35–62 | $280–800 |
+
+**Reading:** $35 per small reel *is* the premium-tier price, but the previous product under it (SD DV transfer) was bulk-tier, so customers compared it with Costco at $20. The premium tier sells frame-by-frame HD/2K, per-reel color correction, full-quality files, film returned cleaned and labeled, and personal handling.
+
+**Suggested price card (per foot, minimum order, like the premium shops):**
+- Standard $0.75/ft (50 ft $38, 200 ft $150, 400 ft $300): frame-by-frame HD, MP4 on USB, film cleaned and labeled.
+- Premium $1.25/ft: adds per-reel color correction and cleanup.
+- Add-ons: DVD $25/disc, extra USB $20. Minimum order $75.
+
+**Hardware consequence:** the free Resolve covers per-reel color correction, so the graphics card and Resolve Studio stay deferred. Minimum list unchanged.
+
+Sources: [Legacybox pricing](https://legacybox.com/pages/pricing), [iMemories vs Costco](https://pixoneye.com/imemories-vs-costco/), [Walmart film transfer](https://www.walmart.com/c/kp/transfer-8mm-film-digital), [Just8mm pricing](https://just8mm.com/pricing/), [ScanCafe Super 8](https://www.scancafe.com/services/movies/super-8-digital-conversion), [EverPresent 8mm](https://everpresent.com/home-movies-to-digital/8mm-film-reel-to-dvd-transfer-service/), [Nostalgic Media](https://nostalgicmedia.com/pages/film-transfer-service), [Feather Cottage price list](https://thefeathercottage.com/film-to-digital-services-price-list/), [Video Conversion Experts 8mm](https://www.videoconversionexperts.com/transfer-8mm-film-to-dvd-and-digital/), [Pro8mm scan pricing](https://www.pro8mm.com/products/scan-super-8mm-8mm-to-digital), [Cinelab pricing](https://www.cinelab.com/pricing), [8mm transfer cost guide](https://www.videoconversionexperts.com/understanding-the-costs-of-8mm-film-transfer-services-a-complete-guide-to-8mm-film-transfer-cost/)
