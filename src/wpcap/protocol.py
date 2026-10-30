@@ -146,9 +146,10 @@ class SequenceChecker:
         self._next: int | None = None
 
     def check(self, seq: int) -> None:
-        if self._next is not None and seq != self._next:
-            raise SequenceGapError(self._next, seq)
+        expected = self._next
         self._next = (seq + 1) % SEQ_MODULO
+        if expected is not None and seq != expected:
+            raise SequenceGapError(expected, seq)  # reported once; the next message re-syncs
 
 
 def cmd_time_request(req_id: int) -> bytes:

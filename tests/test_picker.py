@@ -111,3 +111,11 @@ def test_delay_can_be_changed_between_clicks():
     h.p.delay_ns = 40 * MS
     h.send_click(2, 100)
     assert [p.picture.index for p in h.picked] == [6, 9]  # 96 then 144
+
+
+def test_drain_returns_pending_clicks_in_order_without_callbacks():
+    h = Harness()
+    h.send_click(1, 100)
+    h.send_click(2, 225)
+    assert [c.frame_number for c in h.p.drain()] == [1, 2]
+    assert h.p.pending_count == 0 and h.picked == [] and h.failed == []

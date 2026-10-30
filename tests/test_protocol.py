@@ -79,6 +79,7 @@ def test_sequence_gap_and_repeat_raise():
     with pytest.raises(SequenceGapError) as e:
         s.check(7)
     assert (e.value.expected, e.value.got) == (6, 7)
+    s.check(8)  # the gap is reported once; the next consecutive message is accepted
     s2 = SequenceChecker()
     s2.check(5)
     with pytest.raises(SequenceGapError):

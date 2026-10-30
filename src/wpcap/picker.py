@@ -91,6 +91,12 @@ class FramePicker:
     def pending_count(self) -> int:
         return len(self._pending)
 
+    def drain(self) -> list[PendingClick]:
+        """Remove and return the unresolved clicks in order, without calling back."""
+        out = list(self._pending)
+        self._pending.clear()
+        return out
+
     def on_click(self, pending: PendingClick) -> None:
         pending.target_ns = pending.click.t_pc_ns + self.delay_ns
         self._pending.append(pending)
