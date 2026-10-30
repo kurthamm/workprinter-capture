@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import queue
 import threading
 import time
@@ -70,6 +71,17 @@ class Accounting:
             "pending": self.pending,
             "failed": self.failed,
         }
+
+
+def _fsync_dir(directory: Path) -> None:
+    """Make the rename durable. Windows cannot fsync a directory handle, so it is skipped there."""
+    if os.name != "posix":
+        return
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 class Saver:
@@ -187,10 +199,14 @@ class Saver:
         path = self._folder.frame_path(frame_number)
         tmp = path.with_name(path.name + ".tmp")
         try:
-            Image.fromarray(picture.pixels).save(tmp, format="PNG", compress_level=1)
+            with tmp.open("wb") as f:
+                Image.fromarray(picture.pixels).save(f, format="PNG", compress_level=1)
+                f.flush()
+                os.fsync(f.fileno())
             if path.exists():
                 raise _FrameExists(f"frame already exists: {path}")
             tmp.replace(path)
+            _fsync_dir(path.parent)
         except Exception as exc:  # noqa: BLE001 - every failure is journaled and reported upward
             self._write_failed(frame_number, tmp, exc)
             return

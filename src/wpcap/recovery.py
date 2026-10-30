@@ -11,12 +11,14 @@ from wpcap.reel import Journal, JournalCorrupt, ReelFolder
 
 _FRAME_RE = re.compile(r"^(\d{6})\.png$")
 _TMP_RE = re.compile(r"^(\d{6})\.png\.tmp$")
+_PNG_IEND = b"IEND\xaeB`\x82"  # last 8 bytes of every complete PNG (chunk type + CRC)
 
 
 @dataclass(frozen=True)
 class RecoveryReport:
     reel: Path
     complete_frames: tuple[int, ...]
+    corrupt_frames: tuple[int, ...]  # empty or cut short: the file is there but not a whole PNG
     half_written: tuple[Path, ...]
     journaled_but_missing: tuple[int, ...]
     on_disk_not_journaled: tuple[int, ...]
@@ -39,12 +41,23 @@ def _terminate_last_line(path: Path) -> None:
         f.write(b"\n")
 
 
+def _is_whole_png(path: Path) -> bool:
+    with path.open("rb") as f:
+        f.seek(0, 2)
+        if f.tell() < len(_PNG_IEND):
+            return False
+        f.seek(-len(_PNG_IEND), 2)
+        return f.read() == _PNG_IEND
+
+
 def recover(folder: ReelFolder) -> RecoveryReport:
     complete: list[int] = []
+    corrupt: list[int] = []
     half: list[Path] = []
     for p in sorted(folder.frames_dir.iterdir()):
         if m := _FRAME_RE.match(p.name):
-            complete.append(int(m.group(1)))
+            n = int(m.group(1))
+            (complete if _is_whole_png(p) else corrupt).append(n)
         elif _TMP_RE.match(p.name):
             half.append(p)
     journal = Journal(folder.journal_path)
@@ -66,11 +79,13 @@ def recover(folder: ReelFolder) -> RecoveryReport:
         elif e["type"] == "segment_stop" and e.get("segment") == open_segment:
             open_segment = None
     complete_set, journaled_set = set(complete), set(journaled)
+    corrupt_set = set(corrupt)
     return RecoveryReport(
         reel=folder.path,
         complete_frames=tuple(complete),
+        corrupt_frames=tuple(corrupt),
         half_written=tuple(half),
-        journaled_but_missing=tuple(sorted(journaled_set - complete_set)),
+        journaled_but_missing=tuple(sorted(journaled_set - complete_set - corrupt_set)),
         on_disk_not_journaled=tuple(sorted(complete_set - journaled_set)),
         journal_truncated=truncated,
         last_frame=max(complete) if complete else 0,
@@ -98,6 +113,9 @@ def repair(folder: ReelFolder, report: RecoveryReport) -> None:
             {"type": "failed", "t_ns": now, "frame": n, "reason": "half-written at recovery"}
         )
         p.unlink()
+    for n in report.corrupt_frames:
+        half_frames.add(n)
+        journal.append({"type": "failed", "t_ns": now, "frame": n, "reason": "corrupt after crash"})
     for n in report.orphan_clicks:
         if n not in half_frames:
             journal.append({"type": "failed", "t_ns": now, "frame": n, "reason": "lost at crash"})
@@ -111,6 +129,7 @@ def repair(folder: ReelFolder, report: RecoveryReport) -> None:
             "t_ns": now,
             "complete": len(report.complete_frames),
             "half_written": len(report.half_written),
+            "corrupt": list(report.corrupt_frames),
             "journaled_but_missing": list(report.journaled_but_missing),
             "on_disk_not_journaled": list(report.on_disk_not_journaled),
             "lost_at_crash": [n for n in report.orphan_clicks if n not in half_frames],

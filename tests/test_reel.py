@@ -29,6 +29,18 @@ def test_bad_names_rejected(tmp_path):
         ReelFolder.create(tmp_path, "")
 
 
+@pytest.mark.parametrize(
+    "name", ["Smith: wedding", "CON", "con.txt", "LPT3", "name.", "name ", "a\x01b", "a?b", "a|b"]
+)
+def test_names_windows_cannot_create_rejected(tmp_path, name):
+    with pytest.raises(ValueError):
+        ReelFolder.create(tmp_path, name)
+
+
+def test_windows_safe_name_with_dash_and_digits_accepted(tmp_path):
+    ReelFolder.create(tmp_path, "WorkPrinter 1 — 2026-10-30 1800")
+
+
 def test_open_missing_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         ReelFolder.open(tmp_path / "nope")

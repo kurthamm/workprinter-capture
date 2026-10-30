@@ -6,6 +6,12 @@ import json
 import threading
 from pathlib import Path
 
+_RESERVED_NAMES = frozenset(
+    {"CON", "PRN", "AUX", "NUL"}
+    | {f"COM{i}" for i in range(1, 10)}
+    | {f"LPT{i}" for i in range(1, 10)}
+)
+
 
 class JournalCorrupt(Exception):
     def __init__(self, path: Path, line_number: int) -> None:
@@ -27,6 +33,14 @@ class ReelFolder:
     def check_name(name: str) -> None:
         if not name or "/" in name or "\\" in name or name in (".", ".."):
             raise ValueError(f"bad reel name: {name!r}")
+        if bad := sorted(set(name) & set('<>:"|?*')):
+            raise ValueError(f"reel name {name!r} has characters Windows rejects: {''.join(bad)}")
+        if any(ord(c) < 32 for c in name):
+            raise ValueError(f"reel name {name!r} has a control character")
+        if name.endswith((" ", ".")):
+            raise ValueError(f"reel name {name!r} ends in a space or a dot, which Windows drops")
+        if name.split(".")[0].upper() in _RESERVED_NAMES:
+            raise ValueError(f"reel name {name!r} is a reserved Windows device name")
 
     @classmethod
     def create(cls, root: Path, name: str) -> ReelFolder:

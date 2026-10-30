@@ -431,7 +431,10 @@ def test_journal_write_failure_mid_reel_is_storage_fault(tmp_path):
     assert len(list(reel.frames_dir.glob("*.png"))) >= saved_before
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs POSIX directory permissions as a non-root user",
+)
 def test_frame_write_failure_is_storage_fault_and_earlier_frames_kept(tmp_path):
     film = SimFilm(frames=100, start_ns=3 * S)
     rig = SimRig(cfg(tmp_path), film)

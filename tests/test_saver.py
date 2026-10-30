@@ -35,6 +35,7 @@ def test_saves_png_then_journals(tmp_path):
     s.join(5)
     s.stop()
     assert errors == [] and saved == [1]
+    assert folder.frame_path(1).read_bytes().endswith(b"IEND\xaeB`\x82")
     img = np.asarray(Image.open(folder.frame_path(1)))
     assert img.shape == (16, 24, 3) and img.min() == 77 and img.max() == 77
     assert not list(folder.frames_dir.glob("*.tmp"))
@@ -62,7 +63,10 @@ def test_never_overwrites_existing_frame(tmp_path):
     assert folder.frame_path(1).read_bytes() == b"existing"
 
 
-@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs POSIX directory permissions as a non-root user",
+)
 def test_write_error_is_fault_not_half_frame(tmp_path):
     folder, journal, s, errors, saved = make(tmp_path)
     s.start()

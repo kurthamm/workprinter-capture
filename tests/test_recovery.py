@@ -3,6 +3,8 @@ import pytest
 from wpcap.recovery import recover, repair
 from wpcap.reel import Journal, JournalCorrupt, ReelFolder
 
+PNG_END = b"IEND\xaeB`\x82"
+
 
 def reel_with(
     tmp_path, frames=(1, 2, 3), saved=(1, 2, 3), tmp=(), open_segment=True, truncate=False
@@ -11,7 +13,7 @@ def reel_with(
     j = Journal(r.journal_path)
     j.append({"type": "segment_start", "t_ns": 1, "segment": 1, "first_frame": 1})
     for n in frames:
-        r.frame_path(n).write_bytes(b"png")
+        r.frame_path(n).write_bytes(b"png" + PNG_END)
     for n in saved:
         j.append({"type": "saved", "t_ns": 10 + n, "frame": n, "picture_index": n, "t_pic_ns": n})
     for n in tmp:
@@ -110,3 +112,19 @@ def test_clicks_queued_at_crash_are_reported_and_closed(tmp_path):
         ("recovered", None, None),
     ]
     assert recover(r).orphan_clicks == ()
+
+
+def test_zero_byte_and_cut_frames_are_corrupt_not_complete(tmp_path):
+    r, j = reel_with(tmp_path, frames=(1, 2), saved=(1, 2, 3))
+    r.frame_path(3).write_bytes(b"")
+    r.frame_path(4).write_bytes(b"\x89PNG cut short")
+    rep = recover(r)
+    assert rep.corrupt_frames == (3, 4)
+    assert 3 not in rep.complete_frames and 4 not in rep.complete_frames
+    assert rep.last_frame == 2 and rep.journaled_but_missing == ()
+    assert r.frame_path(3).exists()  # recover never deletes
+    repair(r, rep)
+    events = j.read_all()
+    failed = [(e["frame"], e["reason"]) for e in events if e["type"] == "failed"]
+    assert failed == [(3, "corrupt after crash"), (4, "corrupt after crash")]
+    assert r.frame_path(3).exists() and r.frame_path(4).exists()
