@@ -184,6 +184,34 @@ def test_stop_after_worker_died_does_not_block(tmp_path):
     assert not s.alive
 
 
+def test_failure_after_temp_file_written_removes_it(tmp_path, monkeypatch):
+    # Review focus 4: the PNG reaches the temp file, then the rename fails (disk full at
+    # the directory update, drive pulled). No half frame may stay behind or be renamed in.
+    import pathlib
+
+    folder, journal, s, errors, saved = make(tmp_path)
+    real_replace = pathlib.Path.replace
+    seen_tmp = []
+
+    def failing_replace(self, target):
+        if self.name.endswith(".png.tmp"):
+            seen_tmp.append(self.exists())
+            raise OSError(28, "No space left on device")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(pathlib.Path, "replace", failing_replace)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert seen_tmp == [True]  # the temp file really was written before the failure
+    assert not folder.frame_path(1).exists()
+    assert not list(folder.frames_dir.glob("*.tmp"))
+    assert len(errors) == 1 and errors[0][0] == 1
+    ev = journal.read_all()
+    assert ev[-1]["type"] == "failed" and ev[-1]["frame"] == 1 and "write error" in ev[-1]["reason"]
+
+
 def test_write_error_with_unwritable_journal_still_reports(tmp_path, monkeypatch):
     import pathlib
 

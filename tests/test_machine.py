@@ -1,3 +1,5 @@
+import os
+import stat
 import time
 from pathlib import Path
 
@@ -131,12 +133,18 @@ def test_camera_stall_is_fault(tmp_path):
 
 def test_camera_mode_change_is_fault(tmp_path):
     film = SimFilm(frames=100, start_ns=3 * S)
-    rig = SimRig(cfg(tmp_path), film)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
     rig.run_until(3 * S + 30 * film.period_ns)
+    saved_before = rig.machine.status().frames_saved
     rig.camera.width, rig.camera.height = 96, 54
     rig.run_until(3 * S + 32 * film.period_ns)
     st = rig.machine.status()
     assert st.state == MachineState.STOPPED and st.last_fault.kind == "camera"
+    assert any(a[0] == "problem" and "STOP WorkPrinter 1 NOW" in a[1] for a in rig.alerts)
+    rig.machine.shutdown()
+    frames = sorted(rig.machine.reel.frames_dir.glob("*.png"))
+    assert saved_before >= 25 and len(frames) >= saved_before  # earlier frames kept
+    assert frame_numbers(rig.machine.reel)[:saved_before] == list(range(1, saved_before + 1))
 
 
 def test_operator_stop_then_resume_continues_numbering(tmp_path):
@@ -422,3 +430,27 @@ def test_journal_write_failure_mid_reel_is_storage_fault(tmp_path):
     assert m.accounting.balanced() and m.accounting.pending == 0
     assert len(list(reel.frames_dir.glob("*.png"))) >= saved_before
 
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root ignores directory permissions")
+def test_frame_write_failure_is_storage_fault_and_earlier_frames_kept(tmp_path):
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    m = rig.machine
+    reel = m.reel
+    before = {p.name: p.read_bytes() for p in reel.frames_dir.glob("*.png")}
+    os.chmod(reel.frames_dir, stat.S_IRUSR | stat.S_IXUSR)  # the next frame write fails
+    try:
+        rig.run_for(S)
+    finally:
+        os.chmod(reel.frames_dir, stat.S_IRWXU)
+    st = m.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "storage"
+    assert any(a[0] == "problem" and "STOP WorkPrinter 1 NOW" in a[1] for a in rig.alerts)
+    m.shutdown()
+    events = Journal(reel.journal_path).read_all()
+    assert any(e["type"] == "failed" and "write error" in e["reason"] for e in events)
+    assert len(before) >= 25
+    assert {p.name: p.read_bytes() for p in reel.frames_dir.glob("*.png")} == before
+    assert not list(reel.frames_dir.glob("*.tmp"))
+    assert m.accounting.balanced() and m.accounting.pending == 0
