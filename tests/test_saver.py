@@ -182,3 +182,62 @@ def test_stop_after_worker_died_does_not_block(tmp_path):
     s.submit(2, pic(2))  # fills the queue; nobody will drain it
     s.stop()
     assert not s.alive
+
+
+def test_write_error_with_unwritable_journal_still_reports(tmp_path, monkeypatch):
+    import pathlib
+
+    folder, journal, s, errors, saved = make(tmp_path)
+    journal.path.mkdir()  # the journal cannot be appended to
+
+    def failing_replace(self, target):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(pathlib.Path, "replace", failing_replace)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)  # the worker must survive to report it
+    assert s.alive
+    s.stop()
+    assert len(errors) == 1 and errors[0][0] == 1
+    assert "journal" in str(errors[0][1]) and "Input/output error" in str(errors[0][1])
+    assert s.errors == 1 and s.pending == 0
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_saved_line_unwritable_books_frame_saved_then_ends_worker(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    journal.path.mkdir()
+    s.start()
+    s.submit(1, pic(1))
+    wait_dead(s)
+    assert folder.frame_path(1).exists()
+    assert saved == [1] and errors == [] and s.saved == 1 and s.pending == 0
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_finish_returns_frames_a_dead_worker_never_wrote(tmp_path):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+
+    def boom(n):
+        raise RuntimeError("callback broke")
+
+    s = Saver(folder, journal, SystemClock(), 10, lambda n, e: None, boom)
+    s.submit(1, pic(1))
+    s.submit(2, pic(2))
+    s.submit(3, pic(3))
+    s.start()
+    wait_dead(s)
+    assert s.finish(5) == [2, 3]
+    assert s.pending == 0 and s.saved == 1 and s.errors == 2
+    assert not folder.frame_path(2).exists()
+
+
+def test_finish_waits_for_queued_frames(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    for n in range(1, 6):
+        s.submit(n, pic(n))
+    s.start()
+    assert s.finish(5) == []
+    assert saved == [1, 2, 3, 4, 5] and not s.alive

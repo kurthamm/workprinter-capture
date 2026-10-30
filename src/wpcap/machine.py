@@ -6,7 +6,8 @@ import shutil
 import statistics
 import threading
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -21,7 +22,7 @@ from wpcap.picker import Failed, FramePicker, PendingClick, Picked
 from wpcap.protocol import ProtocolError, SequenceGapError
 from wpcap.reel import Journal, ReelFolder
 from wpcap.saver import Accounting, QueueFull, Saver
-from wpcap.synclink import ClickEvent, SyncBoxLink, SyncBoxSilent
+from wpcap.synclink import ClickEvent, SyncBoxGone, SyncBoxLink, SyncBoxSilent
 
 
 class MachineState(StrEnum):
@@ -120,6 +121,7 @@ class Machine:
         free_bytes: Callable[[Path], int] = _free_bytes,
         wall_clock: Callable[[], datetime] = datetime.now,
     ) -> None:
+        ReelFolder.check_name(config.name)  # it starts every default reel name
         self.config = config
         self._clock = clock
         self.link = link
@@ -140,7 +142,16 @@ class Machine:
         self.fault_history: list[Fault] = []
         self.warnings: list[str] = []
         self._first_shape: tuple[int, int] | None = None
+        self._last_shape: tuple[int, int] | None = None
+        self._last_picture_ns: int | None = None
         self._pictures_seen = 0
+        # Fault kinds already raised while their condition persists: each is raised once,
+        # and forgotten on resume, new reel, a new segment, or when the machine is Ready again.
+        self._active_faults: set[str] = set()
+        self._not_ready_warned = False
+        # A journal write that failed during the current event; becomes a storage fault at
+        # the end of the event (see _event), never dropped.
+        self._journal_error: OSError | None = None
         self._intervals: deque[int] = deque(maxlen=20)
         self._click_times: deque[int] = deque(maxlen=20)
         self._first_click_of_segment = False
@@ -154,6 +165,7 @@ class Machine:
         self._exposure = ExposureWatcher(jump=config.exposure_jump)
         link.on_click = self.on_click
         link.on_bounce = self.on_bounce
+        link.on_unsynced_click = self.on_unsynced_click
 
     def _new_picker(self) -> FramePicker:
         c = self.config
@@ -172,50 +184,56 @@ class Machine:
         self.link.set_debounce(self.config.debounce_us)
 
     def shutdown(self) -> None:
-        with self._lock:
+        with self._event():
             self._camera.stop()
             if self.state == MachineState.RECORDING:
                 self._fault(
                     Fault("operator", "capture program shutting down", "Switch off the WorkPrinter")
                 )
+            # Clicks still waiting for a picture (after the reel finished) can no longer get one.
+            self._fail_pending_clicks("reel closed")
             saver, self._saver = self._saver, None
-            accounting = self.accounting
+            accounting, journal = self.accounting, self._journal
         # The saver's callbacks take the machine lock, so drain it with the lock released.
-        self._drain_saver(saver, accounting)
+        self._drain_saver(saver, accounting, journal)
 
     # ---- operator actions ------------------------------------------------------------------
 
     def new_reel(self, meta: ReelMeta) -> None:
-        with self._lock:
+        if meta.name is not None:
+            ReelFolder.check_name(meta.name)
+        with self._event():
             allowed = (MachineState.READY, MachineState.REEL_FINISHED, MachineState.STOPPED)
             if self.state not in allowed:
                 raise RuntimeError(f"cannot start a new reel while {self.state}")
-            saver, accounting = self._detach_reel()
+            saver, accounting, journal = self._detach_reel()
             self._pending_meta = meta
-            self.state = MachineState.READY
-        self._drain_saver(saver, accounting)
+            self._enter_ready_if_ready()
+        self._drain_saver(saver, accounting, journal)
 
     def stop(self) -> None:
-        with self._lock:
+        with self._event():
             self._fault(Fault("operator", "Stop pressed on the page", "Switch off the WorkPrinter"))
 
     def resume(self) -> None:
-        with self._lock:
+        with self._event():
             if self.state != MachineState.STOPPED:
                 raise RuntimeError(f"resume only from stopped, not {self.state}")
             if self.reel is None:
                 raise RuntimeError("no reel to resume")
-            self._picker = self._new_picker()
+            self._replace_picker("segment stopped")
             self._intervals.clear()
             self._click_times.clear()
             self.segment += 1
-            self.state = MachineState.READY
+            self._enter_ready_if_ready()
 
     # ---- events ----------------------------------------------------------------------------
 
     def on_picture(self, p: Picture) -> None:
-        with self._lock:
+        with self._event():
             self._pictures_seen += 1
+            self._last_picture_ns = p.t_ns
+            self._last_shape = p.shape
             if self._first_shape is None:
                 self._first_shape = p.shape
             elif p.shape != self._first_shape:
@@ -230,18 +248,26 @@ class Machine:
             self._picker.on_picture(p)
 
     def on_bounce(self, seq: int, t_us: int) -> None:
-        with self._lock:
+        with self._event():
             self.bounces += 1
             self._journal_event({"type": "bounce", "seq": seq, "t_box_us": t_us})
 
+    def on_unsynced_click(self, seq: int) -> None:
+        """A closure arrived before the clocks are in sync: the film is moving too early."""
+        with self._event():
+            self._journal_event({"type": "ignored_click", "seq": seq, "state": "unsynced"})
+            self._warn_not_ready()
+
     def on_click(self, ev: ClickEvent) -> None:
-        with self._lock:
+        with self._event():
             if self.state == MachineState.READY:
                 self._open_segment()
             if self.state != MachineState.RECORDING:
                 self._journal_event(
                     {"type": "ignored_click", "seq": ev.seq, "state": str(self.state)}
                 )
+                if self.state == MachineState.NOT_READY:
+                    self._warn_not_ready()
                 return
             self._click_times.append(ev.t_pc_ns)
             first_of_segment = self._first_click_of_segment
@@ -258,6 +284,17 @@ class Machine:
                                 f"far too long between clicks: {ev.interval_us / 1000:.0f} ms "
                                 f"(usual {median / 1000:.0f} ms)",
                                 "Check the film path and the sync cable, wind back, then Resume",
+                            )
+                        )
+                        return
+                    if ev.interval_us * self.config.max_interval_ratio < median:
+                        self._fault(
+                            Fault(
+                                "sync",
+                                "double click: interval far too short: "
+                                f"{ev.interval_us / 1000:.0f} ms (usual {median / 1000:.0f} ms)",
+                                "Check the frame switch and the timing disk, raise the bounce "
+                                "filter if needed, wind back, then Resume",
                             )
                         )
                         return
@@ -329,11 +366,11 @@ class Machine:
     # The saver callbacks are bound to the accounting of the reel the saver belongs to, so a
     # saver still draining after new_reel() never books into the next reel.
     def _on_save_done(self, accounting: Accounting, n: int) -> None:
-        with self._lock:
+        with self._event():
             accounting.saved_one()
 
     def _on_save_error(self, accounting: Accounting, n: int, exc: Exception) -> None:
-        with self._lock:
+        with self._event():
             accounting.failed_one()
             self._fault(
                 Fault(
@@ -344,14 +381,14 @@ class Machine:
     # ---- periodic --------------------------------------------------------------------------
 
     def tick(self) -> None:
-        with self._lock:
+        with self._event():
             try:
                 self.link.poll()
             except (ProtocolError, SequenceGapError) as e:
                 self._fault(
                     Fault("sync", str(e), "Check the sync box cable, wind back, then Resume")
                 )
-            except SyncBoxSilent as e:
+            except (SyncBoxSilent, SyncBoxGone) as e:
                 self._fault(
                     Fault("sync_box", str(e), "Reconnect the sync box, wind back, then Resume")
                 )
@@ -364,28 +401,48 @@ class Machine:
         root = self.config.reel_root
         return self._free_bytes(root if root.exists() else root.parent)
 
-    def _check_health(self) -> None:
+    def _synced(self) -> bool:
         cs = self.link.clocksync
-        free = self._free()
-        synced = cs.ready and cs.error_ms <= self.config.sync_error_limit_ms
-        ok = (
-            synced
-            and self._pictures_seen > 0
-            and free >= self.config.min_free_bytes
+        return cs.ready and cs.error_ms <= self.config.sync_error_limit_ms
+
+    def _camera_fresh(self) -> bool:
+        """The camera is streaming now: its last picture is younger than the stall time."""
+        if self._last_picture_ns is None:
+            return False
+        return self._clock.now_ns() - self._last_picture_ns <= round(self.config.stall_ms * 1e6)
+
+    def _is_ready(self) -> bool:
+        return (
+            self._synced()
             and self.link.serial is not None
+            and self.link.responsive
+            and self._camera_fresh()
+            and self._last_shape == self._first_shape
+            and self._free() >= self.config.min_free_bytes
         )
+
+    def _enter_ready_if_ready(self) -> None:
+        """Operator action done (resume, new reel): Ready only if every check passes now."""
+        self._active_faults.clear()
+        self._not_ready_warned = False
+        self.state = MachineState.READY if self._is_ready() else MachineState.NOT_READY
+
+    def _check_health(self) -> None:
         if self.state == MachineState.NOT_READY:
-            if ok:
+            if self._is_ready():
                 self.state = MachineState.READY
+                self._active_faults.clear()
+                self._not_ready_warned = False
         elif self.state == MachineState.READY:
-            if not ok:
+            if not self._is_ready():
                 self.state = MachineState.NOT_READY
         elif self.state == MachineState.RECORDING:
-            if not synced:
+            free = self._free()
+            if not self._synced():
                 self._fault(
                     Fault(
                         "sync",
-                        f"clock sync error {cs.error_ms:.2f} ms over limit",
+                        f"clock sync error {self.link.clocksync.error_ms:.2f} ms over limit",
                         "Check the sync box USB connection, wind back, then Resume",
                     )
                 )
@@ -403,46 +460,83 @@ class Machine:
                         "storage", "saver stopped unexpectedly", "Check the reel drive and restart"
                     )
                 )
+            elif not self._camera_fresh():
+                self._fault(
+                    Fault(
+                        "camera",
+                        "camera stopped sending pictures",
+                        "Check the camcorder, the video adapter and its USB cable, wind back, "
+                        "then Resume",
+                    )
+                )
 
     # ---- internals -------------------------------------------------------------------------
 
-    def _journal_event(self, event: dict) -> None:
-        if self._journal is None:
+    @contextmanager
+    def _event(self) -> Iterator[None]:
+        """Every entry point runs under the lock and ends by turning a journal write failure
+        that happened during it into a storage fault, once the event's own bookkeeping is
+        complete (so a failed write never leaves a click half booked)."""
+        with self._lock:
+            yield
+            self._settle_journal_error()
+
+    def _settle_journal_error(self) -> None:
+        e = self._journal_error
+        if e is None:
             return
-        self._journal.append({"t_ns": self._clock.now_ns(), **event})
+        self._fault(
+            Fault(
+                "storage",
+                f"cannot write the journal: {e}",
+                "Check the reel drive, wind back, then Resume",
+            )
+        )
+        # _fault's own journal lines meet the same broken journal; this fault reports it.
+        self._journal_error = None
+
+    def _journal_to(self, journal: Journal | None, event: dict) -> None:
+        if journal is None:
+            return
+        try:
+            journal.append({"t_ns": self._clock.now_ns(), **event})
+        except OSError as e:
+            if self._journal_error is None:
+                self._journal_error = e
+
+    def _journal_event(self, event: dict) -> None:
+        self._journal_to(self._journal, event)
 
     def _open_segment(self) -> None:
         if self.reel is None:
-            self._create_reel(self._pending_meta or ReelMeta())
+            try:
+                self._create_reel(self._pending_meta or ReelMeta())
+            except OSError as e:
+                self._fault(
+                    Fault(
+                        "storage",
+                        f"cannot create the reel folder: {e}",
+                        "Check the reel drive, then press New Reel",
+                    ),
+                    film_moving=True,
+                )
+                return
             self._pending_meta = None
         self._journal_event(
             {"type": "segment_start", "segment": self.segment, "first_frame": self._next_frame}
         )
         self._first_click_of_segment = True
+        self._active_faults.clear()
         self.state = MachineState.RECORDING
 
     def _create_reel(self, meta: ReelMeta) -> None:
+        """Nothing is attached to the machine until every step on the drive has worked."""
         name = meta.name or f"{self.config.name} — {self._wall_clock().strftime('%Y-%m-%d %H%M')}"
-        self.reel = ReelFolder.create(self.config.reel_root, name)
-        self._journal = Journal(self.reel.journal_path)
-        self.accounting = Accounting()
-        self._saver = Saver(
-            self.reel,
-            self._journal,
-            self._clock,
-            self.config.save_queue,
-            partial(self._on_save_error, self.accounting),
-            partial(self._on_save_done, self.accounting),
-        )
-        self._saver.start()
-        self.segment = 1
-        self._next_frame = 1
-        self._gate.reset()
-        self._intervals.clear()
+        reel = ReelFolder.create(self.config.reel_root, name)
         info = self._camera.info()
-        self.reel.write_reel_json(
+        reel.write_reel_json(
             {
-                "name": self.reel.name,
+                "name": reel.name,
                 "machine": self.config.name,
                 "film_type": meta.film_type,
                 "notes": meta.notes,
@@ -456,46 +550,88 @@ class Machine:
                 "sync_box_fw": self.link.fw_version,
             }
         )
+        journal = Journal(reel.journal_path)
+        accounting = Accounting()
+        saver = Saver(
+            reel,
+            journal,
+            self._clock,
+            self.config.save_queue,
+            partial(self._on_save_error, accounting),
+            partial(self._on_save_done, accounting),
+        )
+        saver.start()
+        self.reel, self._journal, self.accounting, self._saver = reel, journal, accounting, saver
+        self.segment = 1
+        self._next_frame = 1
+        self._gate.reset()
+        self._intervals.clear()
 
-    def _detach_reel(self) -> tuple[Saver | None, Accounting]:
-        """Under the lock: forget the open reel; return its saver and accounting to drain."""
-        saver, accounting = self._saver, self.accounting
+    def _fail_pending_clicks(self, reason: str) -> None:
+        for pending in self._picker.drain():
+            self.accounting.failed_one()
+            self._journal_event({"type": "failed", "frame": pending.frame_number, "reason": reason})
+
+    def _replace_picker(self, reason: str) -> None:
+        self._fail_pending_clicks(reason)
+        self._picker = self._new_picker()
+
+    def _detach_reel(self) -> tuple[Saver | None, Accounting, Journal | None]:
+        """Under the lock: close the open reel; return its saver, accounting and journal."""
+        self._replace_picker("reel closed")
+        saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
         self._journal = None
         self._saver = None
         self.segment = 0
         self._next_frame = 1
-        self._picker = self._new_picker()
-        return saver, accounting
+        return saver, accounting, journal
 
-    def _drain_saver(self, saver: Saver | None, accounting: Accounting) -> None:
-        """Call WITHOUT the machine lock (the saver callbacks need it): finish queued frames."""
-        if saver is None:
-            return
-        saver.join(30)
-        saver.stop()
-        with self._lock:
-            accounting.assert_balanced()
+    def _drain_saver(
+        self, saver: Saver | None, accounting: Accounting, journal: Journal | None
+    ) -> None:
+        """Call WITHOUT the machine lock (the saver callbacks need it): finish queued frames,
+        book any the saver never wrote as failed, then the reel must be settled."""
+        lost = saver.finish(30) if saver is not None else []
+        with self._event():
+            for n in lost:
+                accounting.failed_one()
+                self._journal_to(
+                    journal,
+                    {"type": "failed", "frame": n, "reason": "saver stopped before writing it"},
+                )
+            accounting.assert_settled()
 
     def _warn(self, text: str) -> None:
         self.warnings.append(text)
         self._alerter.alert("warning", self.config.name, text)
         self._journal_event({"type": "warning", "text": text})
 
-    def _fault(self, fault: Fault) -> None:
+    def _warn_not_ready(self) -> None:
+        if self._not_ready_warned:
+            return
+        self._not_ready_warned = True
+        self._warn(
+            f"film is moving but {self.config.name} is not ready: frames are not being saved. "
+            "Stop the WorkPrinter until it shows Ready"
+        )
+
+    def _fault(self, fault: Fault, film_moving: bool = False) -> None:
+        """Raise a fault: once per kind while its condition persists. While recording, or when
+        the film is known to be moving (film_moving), the machine stops with a STOP alarm."""
+        if fault.kind in self._active_faults:
+            return
+        self._active_faults.add(fault.kind)
         self.fault_history.append(fault)
         self._journal_event(
             {"type": "fault", "kind": fault.kind, "message": fault.message, "segment": self.segment}
         )
-        if self.state == MachineState.RECORDING:
-            for pending in self._picker.drain():
-                self.accounting.failed_one()
+        if self.state == MachineState.RECORDING or film_moving:
+            if self.state == MachineState.RECORDING:
+                self._fail_pending_clicks("segment stopped")
                 self._journal_event(
-                    {"type": "failed", "frame": pending.frame_number, "reason": "segment stopped"}
+                    {"type": "segment_stop", "segment": self.segment, "reason": fault.kind}
                 )
-            self._journal_event(
-                {"type": "segment_stop", "segment": self.segment, "reason": fault.kind}
-            )
             self.state = MachineState.STOPPED
             self._alerter.alert(
                 "problem", f"STOP {self.config.name} NOW", f"{fault.message}. {fault.action}"

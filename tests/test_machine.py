@@ -2,6 +2,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from wpcap.machine import MachineConfig, MachineState, ReelMeta
@@ -119,8 +120,13 @@ def test_camera_stall_is_fault(tmp_path):
     rig.camera.stop()  # no more pictures
     rig.run_until(3 * S + 40 * film.period_ns)
     st = rig.machine.status()
-    assert st.state == MachineState.STOPPED and st.last_fault.kind == "missed_frame"
+    # The camera health check (no picture for stall_ms) fires before the picker's per-click
+    # stall, which needs stall_ms past the click's own window.
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "camera"
+    assert "stopped sending pictures" in st.last_fault.message
     assert st.frames_failed >= 1
+    rig.machine.shutdown()
+    assert rig.machine.accounting.balanced() and rig.machine.accounting.pending == 0
 
 
 def test_camera_mode_change_is_fault(tmp_path):
@@ -280,3 +286,139 @@ def test_resume_after_pause_does_not_trip_interval_rule(tmp_path):
     assert st.segment == 2 and st.frames_saved > saved_at_resume
     rig.machine.shutdown()
     assert rig.machine.accounting.balanced()
+
+
+def camera_faults(m):
+    return [f for f in m.fault_history if f.kind == "camera"]
+
+
+def test_camera_mode_change_faults_once_and_blocks_ready(tmp_path):
+    film = SimFilm(frames=200, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    rig.camera.width, rig.camera.height = 96, 54
+    rig.run_for(2 * S)  # 120 more wrong-size pictures while stopped
+    assert len(camera_faults(rig.machine)) == 1
+    assert sum(a[0] == "problem" for a in rig.alerts) == 1
+    rig.machine.resume()
+    rig.run_for(2 * S)  # the camera is still wrong: no segment may open
+    st = rig.machine.status()
+    assert st.state == MachineState.NOT_READY
+    assert st.segment == 2 and len(camera_faults(rig.machine)) <= 2
+    rig.camera.width, rig.camera.height = 192, 108  # put right again
+    rig.run_for(S)
+    assert rig.machine.status().state in (MachineState.READY, MachineState.RECORDING)
+    rig.machine.shutdown()
+
+
+def test_silent_sync_box_raises_one_fault_not_one_per_tick(tmp_path):
+    rig = SimRig(cfg(tmp_path), SimFilm(frames=0, start_ns=10 * S))
+    rig.box.tick = lambda: None  # the box never speaks
+    rig.run_for(5 * S)  # silent for 2 s past the 3 s hello timeout: 2000 ticks
+    assert [f.kind for f in rig.machine.fault_history] == ["sync_box"]
+    assert sum("no message from sync box" in a[2] for a in rig.alerts) == 1
+    assert rig.machine.status().state == MachineState.NOT_READY
+
+
+def test_unplugged_sync_box_is_sync_box_fault(tmp_path):
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    rig.machine.link._t.close()  # the USB serial port vanished
+    rig.run_for(2 * S)
+    st = rig.machine.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "sync_box"
+    assert [f.kind for f in rig.machine.fault_history] == ["sync_box"]
+    assert any(a[0] == "problem" and "STOP WorkPrinter 1 NOW" in a[1] for a in rig.alerts)
+    rig.machine.shutdown()
+    assert rig.machine.accounting.balanced() and rig.machine.accounting.pending == 0
+
+
+def test_film_moving_before_ready_warns_once(tmp_path):
+    film = SimFilm(frames=200, start_ns=0)  # the operator starts the film at once
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_for(3 * S)
+    warnings = [a for a in rig.alerts if a[0] == "warning" and "not ready" in a[2]]
+    assert len(warnings) == 1 and "WorkPrinter 1" in warnings[0][2]
+    assert rig.machine.link.clicks_before_sync >= 1
+
+
+@pytest.mark.parametrize("close", ["shutdown", "new_reel"])
+def test_click_pending_at_reel_finished_is_failed_when_reel_closes(tmp_path, close):
+    film = SimFilm(frames=60, start_ns=3 * S)
+    # A delay longer than the frame period: the next click is already waiting for its
+    # picture when the frame that finishes the reel is picked.
+    rig = SimRig(cfg(tmp_path, delay_ms=130.0), film)
+    m = rig.machine
+    while m.state != MachineState.REEL_FINISHED:
+        assert rig.clock.now_ns() < 3 * S + 100 * film.period_ns, "reel never finished"
+        rig.run_for(1_000_000)
+    assert m._picker.pending_count >= 1
+    reel, accounting = m.reel, m.accounting
+    if close == "shutdown":
+        m.shutdown()
+    else:
+        m.new_reel(ReelMeta())
+    assert accounting.balanced() and accounting.pending == 0
+    events = Journal(reel.journal_path).read_all()
+    clicked = {e["frame"] for e in events if e["type"] == "click"}
+    resolved = {e["frame"] for e in events if e["type"] in ("saved", "failed")}
+    assert clicked == resolved
+    assert any(e["type"] == "failed" and e["reason"] == "reel closed" for e in events)
+
+
+def test_double_click_far_too_short_is_sync_fault(tmp_path):
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.switch_times.insert(40, film.switch_ns(40) + 60_000_000)  # 60 ms: beats the 20 ms filter
+    rig.run_until(3 * S + 50 * film.period_ns)
+    st = rig.machine.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "sync"
+    assert "double click" in st.last_fault.message and st.bounces == 0
+
+
+def test_camera_stopping_while_ready_demotes_to_not_ready(tmp_path):
+    rig = SimRig(cfg(tmp_path), SimFilm(frames=0, start_ns=10 * S))
+    rig.run_for(2 * S)
+    assert rig.machine.status().state == MachineState.READY
+    rig.camera.stop()
+    rig.run_for(300_000_000)
+    assert rig.machine.status().state == MachineState.NOT_READY
+
+
+def test_reel_drive_unusable_at_first_click_is_storage_fault(tmp_path):
+    (tmp_path / "reels").write_text("a file where the reel folder should be")
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 10 * film.period_ns)
+    m = rig.machine
+    st = m.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "storage"
+    assert m.reel is None and st.clicks == 0
+    assert [f.kind for f in m.fault_history] == ["storage"]
+    assert any(a[0] == "problem" and "STOP WorkPrinter 1 NOW" in a[1] for a in rig.alerts)
+    with pytest.raises(RuntimeError, match="no reel"):
+        m.resume()
+    m.shutdown()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_journal_write_failure_mid_reel_is_storage_fault(tmp_path):
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    m = rig.machine
+    reel = m.reel
+    saved_before = m.status().frames_saved
+    reel.journal_path.rename(reel.path / "journal.moved")
+    reel.journal_path.mkdir()  # every append now raises IsADirectoryError
+    rig.run_for(2 * S)  # must not raise
+    st = m.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "storage"
+    assert "journal" in st.last_fault.message
+    assert [f.kind for f in m.fault_history] == ["storage"]
+    assert sum(a[0] == "problem" and "STOP WorkPrinter 1 NOW" in a[1] for a in rig.alerts) == 1
+    m.shutdown()  # must not raise either
+    assert m.accounting.balanced() and m.accounting.pending == 0
+    assert len(list(reel.frames_dir.glob("*.png"))) >= saved_before
+

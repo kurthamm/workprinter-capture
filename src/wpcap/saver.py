@@ -6,6 +6,7 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 from PIL import Image
 
@@ -55,6 +56,12 @@ class Accounting:
                 f"clicks {self.clicks_accepted} != saved {self.saved} + pending {self.pending}"
                 f" + failed {self.failed}"
             )
+
+    def assert_settled(self) -> None:
+        """After a drain: balanced and nothing left in flight."""
+        self.assert_balanced()
+        if self.pending != 0:
+            raise AccountingError(f"{self.pending} frames still pending after the drain")
 
     def as_dict(self) -> dict:
         return {
@@ -131,6 +138,28 @@ class Saver:
                 raise TimeoutError(f"saver still has {self.pending} frames after {timeout_s} s")
             time.sleep(0.005)
 
+    def wait_idle(self, timeout_s: float) -> None:
+        """Wait until every queued frame is written or the worker has died."""
+        deadline = time.monotonic() + timeout_s
+        while self.pending > 0 and self.alive:
+            if time.monotonic() > deadline:
+                raise TimeoutError(f"saver still has {self.pending} frames after {timeout_s} s")
+            time.sleep(0.005)
+
+    def finish(self, timeout_s: float) -> list[int]:
+        """Write what is queued, stop the worker, and return the frames it never wrote.
+
+        The list is empty unless the worker died; those frames are booked as errors here so
+        the caller can record them as failed.
+        """
+        self.wait_idle(timeout_s)
+        self.stop()
+        with self._lock:
+            lost = sorted(self._inflight)
+            self._inflight.clear()
+            self.errors += len(lost)
+        return lost
+
     def stop(self) -> None:
         if self._thread is None:
             return
@@ -163,12 +192,47 @@ class Saver:
                 raise _FrameExists(f"frame already exists: {path}")
             tmp.replace(path)
         except Exception as exc:  # noqa: BLE001 - every failure is journaled and reported upward
+            self._write_failed(frame_number, tmp, exc)
+            return
+        # The frame is on disk. Anything failing from here is not a write failure; it
+        # propagates, ends the worker, and `alive` goes false for the machine to fault on.
+        try:
+            self._journal.append(
+                {
+                    "type": "saved",
+                    "t_ns": self._clock.now_ns(),
+                    "frame": frame_number,
+                    "picture_index": picture.index,
+                    "t_pic_ns": picture.t_ns,
+                }
+            )
+        except OSError:
+            # The frame is complete on disk, so it is booked as saved (recovery lists it as
+            # on disk but not journaled); then the worker ends and the machine faults.
+            self._book_saved(frame_number)
+            raise
+        self._book_saved(frame_number)
+
+    def _book_saved(self, frame_number: int) -> None:
+        with self._lock:
+            self.saved += 1
+            self._inflight.discard(frame_number)
+        self._on_saved(frame_number)
+
+    def _write_failed(self, frame_number: int, tmp: Path, exc: Exception) -> None:
+        """Remove the temp file, journal `failed`, report. Never dies on the way: a failure
+        here (temp file stuck, journal unwritable) is added to what is reported."""
+        reason = str(exc) if isinstance(exc, _FrameExists) else f"write error: {exc}"
+        problems: list[str] = []
+        try:
             if tmp.exists():
                 tmp.unlink()
-            with self._lock:
-                self.errors += 1
-                self._inflight.discard(frame_number)
-            reason = str(exc) if isinstance(exc, _FrameExists) else f"write error: {exc}"
+        except OSError as e:
+            problems.append(f"temp file not removed: {e}")
+        with self._lock:
+            self.errors += 1
+            self._inflight.discard(frame_number)
+        try:
             self._journal.append(
                 {
                     "type": "failed",
@@ -177,20 +241,9 @@ class Saver:
                     "reason": reason,
                 }
             )
+        except OSError as e:
+            problems.append(f"journal not written: {e}")
+        if problems:
+            self._on_error(frame_number, OSError("; ".join([reason, *problems])))
+        else:
             self._on_error(frame_number, exc)
-            return
-        # The frame is on disk. Anything failing from here is not a write failure; it
-        # propagates, ends the worker, and `alive` goes false for the machine to fault on.
-        self._journal.append(
-            {
-                "type": "saved",
-                "t_ns": self._clock.now_ns(),
-                "frame": frame_number,
-                "picture_index": picture.index,
-                "t_pic_ns": picture.t_ns,
-            }
-        )
-        with self._lock:
-            self.saved += 1
-            self._inflight.discard(frame_number)
-        self._on_saved(frame_number)

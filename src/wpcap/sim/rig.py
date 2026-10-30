@@ -16,6 +16,10 @@ from wpcap.sim.transport import sim_transport_pair
 from wpcap.synclink import SyncBoxLink
 
 
+def _unbound(*args: object) -> None:
+    raise RuntimeError("sync box callback used before a Machine bound it")
+
+
 class SimRig:
     def __init__(
         self,
@@ -34,7 +38,8 @@ class SimRig:
             self.clock, film, fps=cam_fps, width=cam_size[0], height=cam_size[1]
         )
         self.alerter = RecordingAlerter()
-        link = SyncBoxLink(pc_side, self.clock, ClockSync(), lambda ev: None, lambda s, t: None)
+        # The Machine binds the link's three callbacks to itself; these are placeholders until then.
+        link = SyncBoxLink(pc_side, self.clock, ClockSync(), _unbound, _unbound, _unbound)
         kwargs = {} if free_bytes is None else {"free_bytes": free_bytes}
         self.machine = Machine(config, self.clock, link, self.camera, self.alerter, **kwargs)
         self.switch_times: list[int] = film.switch_times()
@@ -58,8 +63,8 @@ class SimRig:
         self.box.tick()
         self.machine.tick()
         saver = self.machine._saver
-        if saver is not None and saver.alive:
-            saver.join(5)
+        if saver is not None:
+            saver.wait_idle(5)  # returns early if the worker died; the machine faults on that
 
     def run_until(self, t_ns: int, step_ns: int = 1_000_000) -> None:
         while self.clock.now_ns() < t_ns:

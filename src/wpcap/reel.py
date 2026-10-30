@@ -23,10 +23,14 @@ class ReelFolder:
         self.journal_path = path / "journal.jsonl"
         self.reel_json_path = path / "reel.json"
 
-    @classmethod
-    def create(cls, root: Path, name: str) -> ReelFolder:
+    @staticmethod
+    def check_name(name: str) -> None:
         if not name or "/" in name or "\\" in name or name in (".", ".."):
             raise ValueError(f"bad reel name: {name!r}")
+
+    @classmethod
+    def create(cls, root: Path, name: str) -> ReelFolder:
+        cls.check_name(name)
         root.mkdir(parents=True, exist_ok=True)
         candidate = root / name
         n = 2

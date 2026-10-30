@@ -15,12 +15,14 @@ class Rig:
         self.box = SimSyncBox(self.clock, box_side, **box_kwargs)
         self.clicks = []
         self.bounces = []
+        self.unsynced = []
         self.link = SyncBoxLink(
             pc_side,
             self.clock,
             ClockSync(),
             self.clicks.append,
             lambda s, t: self.bounces.append(s),
+            self.unsynced.append,
         )
 
     def run(self, ns: int, step_ns: int = 1_000_000):
@@ -57,6 +59,7 @@ def test_clicks_before_sync_are_counted_not_delivered():
     r.link.poll()
     assert r.clicks == []
     assert r.link.clicks_before_sync == 1
+    assert len(r.unsynced) == 1
 
 
 def test_bounce_is_reported_separately():
@@ -101,3 +104,24 @@ def test_set_debounce_reaches_box():
     r.link.set_debounce(50_000)
     r.box.tick()
     assert r.box.debounce_us == 50_000
+
+
+def test_time_reply_for_unknown_request_is_protocol_error():
+    from wpcap.protocol import TimeReply, encode_message
+
+    r = Rig()
+    r.run(2_000_000_000)
+    r.box._t.write(encode_message(TimeReply(r.box._next_seq(), r.box.box_time_us(), 999_999)))
+    with pytest.raises(ProtocolError, match="unknown request"):
+        r.link.poll()
+
+
+def test_unplugged_transport_is_sync_box_gone():
+    from wpcap.synclink import SyncBoxGone
+
+    r = Rig()
+    r.run(2_000_000_000)
+    r.link._t.close()  # the serial port vanished: reads and writes raise OSError
+    with pytest.raises(SyncBoxGone):
+        r.link.poll()
+    assert not r.link.responsive
