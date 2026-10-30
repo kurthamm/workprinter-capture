@@ -89,3 +89,54 @@ def test_journal_last_line_cut_mid_character_is_truncated_not_a_crash(tmp_path):
         Journal(p).read_all()
     events, truncated = Journal(p).read_all_tolerant()
     assert events == [{"type": "a", "t_ns": 1}] and truncated
+
+
+def test_journal_appends_from_two_threads_stay_whole_lines(tmp_path, monkeypatch):
+    # On Windows (and network drives) an append is seek-to-end + write, not one atomic
+    # write. Model that: every write goes out in small pieces with a thread switch between.
+    import pathlib
+    import threading
+    import time
+
+    real_open = pathlib.Path.open
+
+    class Chunky:
+        def __init__(self, f):
+            self._f = f
+
+        def write(self, s):
+            for i in range(0, len(s), 7):
+                self._f.write(s[i : i + 7])
+                self._f.flush()
+                time.sleep(0)
+            return len(s)
+
+        def flush(self):
+            self._f.flush()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            self._f.close()
+
+    def chunky_open(self, *args, **kwargs):
+        return Chunky(real_open(self, *args, **kwargs))
+
+    monkeypatch.setattr(pathlib.Path, "open", chunky_open)
+    j = Journal(tmp_path / "journal.jsonl")
+
+    def writer(name):
+        for i in range(200):
+            j.append({"type": name, "t_ns": i, "pad": "x" * 40})
+
+    threads = [threading.Thread(target=writer, args=(n,)) for n in ("a", "b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    monkeypatch.undo()
+    events = j.read_all()
+    assert len(events) == 400
+    assert sorted(e["t_ns"] for e in events if e["type"] == "a") == list(range(200))
+    assert sorted(e["t_ns"] for e in events if e["type"] == "b") == list(range(200))

@@ -65,3 +65,48 @@ def test_repair_closes_segment_and_removes_tmp(tmp_path):
     assert events[-2]["reason"] == "crash"
     assert events[-3]["frame"] == 3
     assert recover(r).open_segment is None
+
+
+def test_repair_trims_a_line_cut_mid_character(tmp_path):
+    r, j = reel_with(tmp_path, open_segment=False)
+    full = '{"type": "warning", "t_ns": 7, "text": "— check camcorder"}'.encode()
+    with r.journal_path.open("ab") as f:
+        f.write(full[: full.index("—".encode()) + 1])  # first byte of a 3-byte character
+    rep = recover(r)
+    assert rep.journal_truncated
+    repair(r, rep)
+    events = j.read_all()
+    assert events[-1]["type"] == "recovered"
+    assert [e["type"] for e in events[:-1]] == ["segment_start"] + ["saved"] * 3 + ["segment_stop"]
+
+
+def test_complete_last_line_without_newline_is_flagged_and_kept(tmp_path):
+    r, j = reel_with(tmp_path)
+    data = r.journal_path.read_bytes()
+    r.journal_path.write_bytes(data.rstrip(b"\n"))  # last saved line is whole but unterminated
+    rep = recover(r)
+    assert rep.missing_final_newline and not rep.journal_truncated
+    repair(r, rep)
+    events = j.read_all()
+    assert [e["frame"] for e in events if e["type"] == "saved"] == [1, 2, 3]
+    assert [e["type"] for e in events[-2:]] == ["segment_stop", "recovered"]
+
+
+def test_clicks_queued_at_crash_are_reported_and_closed(tmp_path):
+    r, j = reel_with(tmp_path, frames=(1, 2), saved=(1, 2), tmp=(3,))
+    for n in (1, 2, 3, 4, 5):
+        j.append({"type": "click", "t_ns": 20 + n, "frame": n, "seq": n, "segment": 1})
+    j.append({"type": "failed", "t_ns": 40, "frame": 5, "reason": "no picture within window"})
+    rep = recover(r)
+    assert rep.orphan_clicks == (3, 4)
+    assert not rep.missing_final_newline
+    repair(r, rep)
+    events = j.read_all()
+    tail = [(e["type"], e.get("frame"), e.get("reason")) for e in events[-4:]]
+    assert tail == [
+        ("failed", 3, "half-written at recovery"),
+        ("failed", 4, "lost at crash"),
+        ("segment_stop", None, "crash"),
+        ("recovered", None, None),
+    ]
+    assert recover(r).orphan_clicks == ()

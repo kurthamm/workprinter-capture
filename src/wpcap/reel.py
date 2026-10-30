@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 
@@ -58,14 +59,19 @@ class ReelFolder:
 
 
 class Journal:
+    """Append-only event log. The machine thread and the saver thread both append, so every
+    append holds one lock: an append is not one atomic write on every OS (Windows, network
+    drives), and interleaved pieces would corrupt both lines."""
+
     def __init__(self, path: Path) -> None:
         self.path = path
+        self._lock = threading.Lock()
 
     def append(self, event: dict) -> None:
         if "type" not in event or "t_ns" not in event:
             raise ValueError(f"journal event needs 'type' and 't_ns': {event}")
         line = json.dumps(event, ensure_ascii=False)
-        with self.path.open("a", encoding="utf-8") as f:
+        with self._lock, self.path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
             f.flush()
 
