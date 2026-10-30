@@ -97,3 +97,45 @@ def test_command_with_bad_crc_is_protocol_error():
     line[-2] = ord("0") if line[-2] != ord("0") else ord("1")
     with pytest.raises(ProtocolError, match="CRC"):
         parse_command(bytes(line))
+
+
+def framed(body: bytes) -> bytes:
+    return body + b"*" + f"{crc16(body):04X}".encode() + b"\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "H 1 5 0.1.0 SÉRIAL".encode(),  # non-ASCII
+        b"H 1 5 0.1.0 \xff\xfe",  # not even UTF-8
+        b"H 1 5 0.1*0 E6614C31",  # '*' inside a field
+        b"H 1 5  E6614C31",  # empty field
+    ],
+)
+def test_bad_hello_text_is_protocol_error(body):
+    with pytest.raises(ProtocolError):
+        decode_line(framed(body))
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        b"C -1 2 3",  # seq below 0
+        b"C 4294967296 2 3",  # seq above 32 bits
+        b"C 1 -2 3",  # time before boot
+        b"C 1 18446744073709551616 3",  # time above 64 bits
+        b"C 1 2 -3",  # negative interval
+        b"T 1 2 -1",  # negative request id
+    ],
+)
+def test_out_of_range_numbers_are_protocol_errors(body):
+    with pytest.raises(ProtocolError):
+        decode_line(framed(body))
+
+
+@pytest.mark.parametrize(
+    "fw, serial", [("0.1 beta", "E66"), ("0.1", "E6*6"), ("0.1", "É66"), ("", "E66")]
+)
+def test_encode_rejects_hello_text_the_wire_cannot_carry(fw, serial):
+    with pytest.raises(ValueError):
+        encode_message(Hello(seq=1, t_us=5, fw_version=fw, serial=serial))

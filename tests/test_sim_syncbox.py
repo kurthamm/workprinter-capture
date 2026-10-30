@@ -80,3 +80,14 @@ def test_drift_changes_box_time():
     box = SimSyncBox(clock, box_side, drift_ppm=100)
     clock.set(10_000_000_000)
     assert box.box_time_us() == 10_001_000
+
+
+def test_sim_box_rejects_serial_the_wire_cannot_carry():
+    import pytest
+
+    clock = SimClock()
+    box_side, _ = sim_transport_pair()
+    with pytest.raises(ValueError):
+        SimSyncBox(clock, box_side, serial="SIM 0001")
+    with pytest.raises(ValueError):
+        SimSyncBox(clock, box_side, fw_version="sim*0.1")

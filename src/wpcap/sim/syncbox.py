@@ -15,6 +15,7 @@ from wpcap.protocol import (
     Hello,
     TimeReply,
     encode_message,
+    is_wire_text,
     parse_command,
 )
 from wpcap.sim.transport import Transport
@@ -31,6 +32,9 @@ class SimSyncBox:
         debounce_us: int = 20_000,
         fw_version: str = "sim-0.1",
     ) -> None:
+        for text in (serial, fw_version):
+            if not is_wire_text(text):
+                raise ValueError(f"serial and firmware version must be wire text: {text!r}")
         self._clock = clock
         self._t = transport
         self.serial = serial
