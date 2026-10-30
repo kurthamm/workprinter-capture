@@ -78,3 +78,14 @@ def test_journal_truncated_last_line_is_tolerated_only_by_tolerant_reader(tmp_pa
         Journal(p).read_all()
     events, truncated = Journal(p).read_all_tolerant()
     assert events == [{"type": "a", "t_ns": 1}] and truncated
+
+
+def test_journal_last_line_cut_mid_character_is_truncated_not_a_crash(tmp_path):
+    p = tmp_path / "journal.jsonl"
+    full = json.dumps({"type": "b", "t_ns": 2, "note": "—"}, ensure_ascii=False).encode("utf-8")
+    cut = full[: full.index("—".encode()) + 1]  # first byte of the 3-byte character
+    p.write_bytes(json.dumps({"type": "a", "t_ns": 1}).encode() + b"\n" + cut)
+    with pytest.raises(JournalCorrupt):
+        Journal(p).read_all()
+    events, truncated = Journal(p).read_all_tolerant()
+    assert events == [{"type": "a", "t_ns": 1}] and truncated

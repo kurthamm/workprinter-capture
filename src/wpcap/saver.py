@@ -22,6 +22,10 @@ class AccountingError(Exception):
     pass
 
 
+class _FrameExists(FileExistsError):
+    """The frame file appeared between submit and write; it is never replaced."""
+
+
 class Accounting:
     def __init__(self) -> None:
         self.clicks_accepted = 0
@@ -84,6 +88,7 @@ class Saver:
         self.saved = 0
         self.errors = 0
         self._submitted = 0
+        self._inflight: set[int] = set()
 
     @property
     def pending(self) -> int:
@@ -104,12 +109,18 @@ class Saver:
         path = self._folder.frame_path(frame_number)
         if path.exists():
             raise FileExistsError(f"frame already exists: {path}")
+        with self._lock:
+            if frame_number in self._inflight:
+                raise FileExistsError(f"frame {frame_number} is already queued for saving")
+            self._inflight.add(frame_number)
+            self._submitted += 1
         try:
             self._q.put_nowait((frame_number, picture))
         except queue.Full as e:
+            with self._lock:
+                self._inflight.discard(frame_number)
+                self._submitted -= 1
             raise QueueFull(f"save queue full ({self._q.maxsize}) at frame {frame_number}") from e
-        with self._lock:
-            self._submitted += 1
 
     def join(self, timeout_s: float) -> None:
         deadline = time.monotonic() + timeout_s
@@ -123,8 +134,16 @@ class Saver:
     def stop(self) -> None:
         if self._thread is None:
             return
-        self._q.put(None)
+        if not self._thread.is_alive():
+            self._thread = None
+            return
+        try:
+            self._q.put(None, timeout=10)
+        except queue.Full as e:
+            raise TimeoutError(f"saver queue stuck full with {self.pending} frames pending") from e
         self._thread.join(timeout=10)
+        if self._thread.is_alive():
+            raise TimeoutError(f"saver did not stop; {self.pending} frames pending")
         self._thread = None
 
     def _run(self) -> None:
@@ -140,30 +159,38 @@ class Saver:
         tmp = path.with_name(path.name + ".tmp")
         try:
             Image.fromarray(picture.pixels).save(tmp, format="PNG", compress_level=1)
+            if path.exists():
+                raise _FrameExists(f"frame already exists: {path}")
             tmp.replace(path)
-            self._journal.append(
-                {
-                    "type": "saved",
-                    "t_ns": self._clock.now_ns(),
-                    "frame": frame_number,
-                    "picture_index": picture.index,
-                    "t_pic_ns": picture.t_ns,
-                }
-            )
-            with self._lock:
-                self.saved += 1
-            self._on_saved(frame_number)
         except Exception as exc:  # noqa: BLE001 - every failure is journaled and reported upward
             if tmp.exists():
                 tmp.unlink()
             with self._lock:
                 self.errors += 1
+                self._inflight.discard(frame_number)
+            reason = str(exc) if isinstance(exc, _FrameExists) else f"write error: {exc}"
             self._journal.append(
                 {
                     "type": "failed",
                     "t_ns": self._clock.now_ns(),
                     "frame": frame_number,
-                    "reason": f"write error: {exc}",
+                    "reason": reason,
                 }
             )
             self._on_error(frame_number, exc)
+            return
+        # The frame is on disk. Anything failing from here is not a write failure; it
+        # propagates, ends the worker, and `alive` goes false for the machine to fault on.
+        self._journal.append(
+            {
+                "type": "saved",
+                "t_ns": self._clock.now_ns(),
+                "frame": frame_number,
+                "picture_index": picture.index,
+                "t_pic_ns": picture.t_ns,
+            }
+        )
+        with self._lock:
+            self.saved += 1
+            self._inflight.discard(frame_number)
+        self._on_saved(frame_number)

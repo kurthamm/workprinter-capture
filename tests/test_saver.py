@@ -1,5 +1,6 @@
 import os
 import stat
+import time
 
 import numpy as np
 import pytest
@@ -95,3 +96,89 @@ def test_accounting_balances():
     assert not a.balanced()
     with pytest.raises(AccountingError):
         a.assert_balanced()
+
+
+def wait_dead(s, timeout=5):
+    deadline = time.monotonic() + timeout
+    while s.alive:
+        assert time.monotonic() < deadline, "saver thread did not die"
+        time.sleep(0.005)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_on_saved_failure_is_not_a_write_failure(tmp_path):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+    errors = []
+
+    def boom(n):
+        raise RuntimeError("callback broke")
+
+    s = Saver(folder, journal, SystemClock(), 10, lambda n, e: errors.append(n), boom)
+    s.start()
+    s.submit(1, pic(1))
+    wait_dead(s)
+    s.stop()
+    assert errors == [] and s.errors == 0 and s.saved == 1
+    assert folder.frame_path(1).exists()
+    assert [e["type"] for e in journal.read_all()] == ["saved"]
+
+
+def test_queue_full_does_not_leak_pending(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path, queue_size=2)
+    s.submit(1, pic(1))
+    s.submit(2, pic(2))
+    with pytest.raises(QueueFull):
+        s.submit(3, pic(3))
+    assert s.pending == 2
+    s.start()
+    s.join(5)
+    s.submit(3, pic(3))  # the failed submit left no in-flight mark behind
+    s.join(5)
+    s.stop()
+    assert s.saved == 3 and s.pending == 0
+
+
+def test_duplicate_in_flight_submit_raises(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.submit(1, pic(1))  # not started: stays queued
+    with pytest.raises(FileExistsError):
+        s.submit(1, pic(1))
+    assert s.pending == 1
+
+
+def test_file_appearing_before_write_is_not_overwritten(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.submit(1, pic(1))
+    folder.frame_path(1).write_bytes(b"someone else's")
+    s.start()
+    s.join(5)
+    s.stop()
+    assert folder.frame_path(1).read_bytes() == b"someone else's"
+    assert not list(folder.frames_dir.glob("*.tmp"))
+    assert len(errors) == 1 and errors[0][0] == 1 and saved == []
+    ev = journal.read_all()
+    assert ev[-1]["type"] == "failed" and "already exists" in ev[-1]["reason"]
+    assert s.errors == 1 and s.saved == 0
+
+
+def test_stop_without_running_thread_returns(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.stop()  # never started
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_stop_after_worker_died_does_not_block(tmp_path):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+
+    def boom(n):
+        raise RuntimeError("callback broke")
+
+    s = Saver(folder, journal, SystemClock(), 1, lambda n, e: None, boom)
+    s.start()
+    s.submit(1, pic(1))
+    wait_dead(s)
+    s.submit(2, pic(2))  # fills the queue; nobody will drain it
+    s.stop()
+    assert not s.alive

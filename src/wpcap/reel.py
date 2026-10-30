@@ -81,17 +81,17 @@ class Journal:
     def _read(self) -> tuple[list[dict], bool]:
         if not self.path.exists():
             return [], False
-        text = self.path.read_text(encoding="utf-8")
-        ends_with_newline = text.endswith("\n")
-        lines = text.split("\n")
+        data = self.path.read_bytes()
+        ends_with_newline = data.endswith(b"\n")
+        lines = data.split(b"\n")
         if ends_with_newline:
             lines = lines[:-1]
         events: list[dict] = []
         for i, line in enumerate(lines, start=1):
             is_last = i == len(lines)
             try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError as e:
+                events.append(json.loads(line.decode("utf-8")))
+            except (UnicodeDecodeError, json.JSONDecodeError) as e:
                 if is_last and not ends_with_newline:
                     return events, True
                 raise JournalCorrupt(self.path, i) from e
