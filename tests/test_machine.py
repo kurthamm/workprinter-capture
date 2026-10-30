@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 import numpy as np
@@ -230,4 +231,52 @@ def test_thousand_frames_none_lost_or_doubled(tmp_path):
     st = rig.machine.status()
     assert st.state == MachineState.REEL_FINISHED and st.frames_failed == 0
     assert frame_numbers(ReelFolder.open(rig.machine.reel.path))[:1000] == list(range(1, 1001))
+    assert rig.machine.accounting.balanced()
+
+
+def test_shutdown_with_frames_queued_does_not_deadlock(tmp_path):
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 10 * film.period_ns)
+    m = rig.machine
+    assert m.state == MachineState.RECORDING
+    # Step by hand without draining the saver, holding the machine lock: the saver thread
+    # blocks in its on_saved callback, so later frames stay queued.
+    with m._lock:
+        end = rig.clock.now_ns() + 5 * film.period_ns
+        while rig.clock.now_ns() < end:
+            rig.clock.advance(1_000_000)
+            now = rig.clock.now_ns()
+            rig.camera.emit_until(now)
+            while rig._next_switch < len(rig.switch_times) and (
+                rig.switch_times[rig._next_switch] <= now
+            ):
+                rig.box.close_switch()
+                rig._next_switch += 1
+            rig.box.tick()
+            m.tick()
+        assert m._saver.pending > 0
+    t0 = time.monotonic()
+    m.shutdown()
+    assert time.monotonic() - t0 < 2
+    assert m.accounting.balanced() and m.accounting.pending == 0
+
+
+def test_resume_after_pause_does_not_trip_interval_rule(tmp_path):
+    film = SimFilm(frames=200, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(3 * S + 40 * film.period_ns)  # well over 20 intervals known
+    rig.machine.stop()
+    now = rig.clock.now_ns()
+    # The operator winds back: no clicks for 2 s.
+    rig.switch_times[:] = [t for t in rig.switch_times if not now < t <= now + 2 * S]
+    rig.run_for(2 * S)
+    saved_at_resume = rig.machine.status().frames_saved
+    rig.machine.resume()
+    rig.run_for(3 * S)
+    st = rig.machine.status()
+    assert st.state in (MachineState.RECORDING, MachineState.REEL_FINISHED)
+    assert st.last_fault.kind == "operator"
+    assert st.segment == 2 and st.frames_saved > saved_at_resume
+    rig.machine.shutdown()
     assert rig.machine.accounting.balanced()

@@ -10,6 +10,7 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 from typing import Protocol
 
@@ -142,6 +143,7 @@ class Machine:
         self._pictures_seen = 0
         self._intervals: deque[int] = deque(maxlen=20)
         self._click_times: deque[int] = deque(maxlen=20)
+        self._first_click_of_segment = False
         self._picker = self._new_picker()
         self._gate = GateDetector(
             config.gate_bright_min,
@@ -172,10 +174,14 @@ class Machine:
     def shutdown(self) -> None:
         with self._lock:
             self._camera.stop()
-            if self._saver is not None:
-                self._saver.join(30)
-                self._saver.stop()
-                self.accounting.assert_balanced()
+            if self.state == MachineState.RECORDING:
+                self._fault(
+                    Fault("operator", "capture program shutting down", "Switch off the WorkPrinter")
+                )
+            saver, self._saver = self._saver, None
+            accounting = self.accounting
+        # The saver's callbacks take the machine lock, so drain it with the lock released.
+        self._drain_saver(saver, accounting)
 
     # ---- operator actions ------------------------------------------------------------------
 
@@ -184,9 +190,10 @@ class Machine:
             allowed = (MachineState.READY, MachineState.REEL_FINISHED, MachineState.STOPPED)
             if self.state not in allowed:
                 raise RuntimeError(f"cannot start a new reel while {self.state}")
-            self._close_reel()
+            saver, accounting = self._detach_reel()
             self._pending_meta = meta
             self.state = MachineState.READY
+        self._drain_saver(saver, accounting)
 
     def stop(self) -> None:
         with self._lock:
@@ -199,6 +206,8 @@ class Machine:
             if self.reel is None:
                 raise RuntimeError("no reel to resume")
             self._picker = self._new_picker()
+            self._intervals.clear()
+            self._click_times.clear()
             self.segment += 1
             self.state = MachineState.READY
 
@@ -235,7 +244,11 @@ class Machine:
                 )
                 return
             self._click_times.append(ev.t_pc_ns)
-            if ev.interval_us > 0:
+            first_of_segment = self._first_click_of_segment
+            self._first_click_of_segment = False
+            # The first click of a segment measures the pause before it (winding back), not
+            # the machine's running speed, so it is neither checked nor added to the median.
+            if ev.interval_us > 0 and not first_of_segment:
                 if len(self._intervals) == self._intervals.maxlen:
                     median = statistics.median(self._intervals)
                     if ev.interval_us > self.config.max_interval_ratio * median:
@@ -313,13 +326,15 @@ class Machine:
             )
         )
 
-    def _on_save_done(self, n: int) -> None:
+    # The saver callbacks are bound to the accounting of the reel the saver belongs to, so a
+    # saver still draining after new_reel() never books into the next reel.
+    def _on_save_done(self, accounting: Accounting, n: int) -> None:
         with self._lock:
-            self.accounting.saved_one()
+            accounting.saved_one()
 
-    def _on_save_error(self, n: int, exc: Exception) -> None:
+    def _on_save_error(self, accounting: Accounting, n: int, exc: Exception) -> None:
         with self._lock:
-            self.accounting.failed_one()
+            accounting.failed_one()
             self._fault(
                 Fault(
                     "storage", f"frame {n}: {exc}", "Check the reel drive, wind back, then Resume"
@@ -403,24 +418,25 @@ class Machine:
         self._journal_event(
             {"type": "segment_start", "segment": self.segment, "first_frame": self._next_frame}
         )
+        self._first_click_of_segment = True
         self.state = MachineState.RECORDING
 
     def _create_reel(self, meta: ReelMeta) -> None:
         name = meta.name or f"{self.config.name} — {self._wall_clock().strftime('%Y-%m-%d %H%M')}"
         self.reel = ReelFolder.create(self.config.reel_root, name)
         self._journal = Journal(self.reel.journal_path)
+        self.accounting = Accounting()
         self._saver = Saver(
             self.reel,
             self._journal,
             self._clock,
             self.config.save_queue,
-            self._on_save_error,
-            self._on_save_done,
+            partial(self._on_save_error, self.accounting),
+            partial(self._on_save_done, self.accounting),
         )
         self._saver.start()
         self.segment = 1
         self._next_frame = 1
-        self.accounting = Accounting()
         self._gate.reset()
         self._intervals.clear()
         info = self._camera.info()
@@ -441,17 +457,25 @@ class Machine:
             }
         )
 
-    def _close_reel(self) -> None:
-        if self._saver is not None:
-            self._saver.join(30)
-            self._saver.stop()
-            self.accounting.assert_balanced()
+    def _detach_reel(self) -> tuple[Saver | None, Accounting]:
+        """Under the lock: forget the open reel; return its saver and accounting to drain."""
+        saver, accounting = self._saver, self.accounting
         self.reel = None
         self._journal = None
         self._saver = None
         self.segment = 0
         self._next_frame = 1
         self._picker = self._new_picker()
+        return saver, accounting
+
+    def _drain_saver(self, saver: Saver | None, accounting: Accounting) -> None:
+        """Call WITHOUT the machine lock (the saver callbacks need it): finish queued frames."""
+        if saver is None:
+            return
+        saver.join(30)
+        saver.stop()
+        with self._lock:
+            accounting.assert_balanced()
 
     def _warn(self, text: str) -> None:
         self.warnings.append(text)
