@@ -21,10 +21,13 @@ def make(tmp_path, queue_size=120):
     journal = Journal(folder.journal_path)
     errors = []
     saved = []
+    durability = []
     s = Saver(
         folder, journal, SystemClock(), queue_size,
         lambda n, e: errors.append((n, e)), saved.append,
+        lambda n, e: durability.append((n, e)),
     )
+    s.durability = durability
     return folder, journal, s, errors, saved
 
 
@@ -118,7 +121,10 @@ def test_on_saved_failure_is_not_a_write_failure(tmp_path):
     def boom(n):
         raise RuntimeError("callback broke")
 
-    s = Saver(folder, journal, SystemClock(), 10, lambda n, e: errors.append(n), boom)
+    s = Saver(
+        folder, journal, SystemClock(), 10, lambda n, e: errors.append(n), boom,
+        lambda n, e: None,
+    )
     s.start()
     s.submit(1, pic(1))
     wait_dead(s)
@@ -179,7 +185,7 @@ def test_stop_after_worker_died_does_not_block(tmp_path):
     def boom(n):
         raise RuntimeError("callback broke")
 
-    s = Saver(folder, journal, SystemClock(), 1, lambda n, e: None, boom)
+    s = Saver(folder, journal, SystemClock(), 1, lambda n, e: None, boom, lambda n, e: None)
     s.start()
     s.submit(1, pic(1))
     wait_dead(s)
@@ -255,7 +261,7 @@ def test_finish_returns_frames_a_dead_worker_never_wrote(tmp_path):
     def boom(n):
         raise RuntimeError("callback broke")
 
-    s = Saver(folder, journal, SystemClock(), 10, lambda n, e: None, boom)
+    s = Saver(folder, journal, SystemClock(), 10, lambda n, e: None, boom, lambda n, e: None)
     s.submit(1, pic(1))
     s.submit(2, pic(2))
     s.submit(3, pic(3))
@@ -293,3 +299,21 @@ def test_directory_sync_failure_is_a_warning_not_a_failed_write(tmp_path, monkey
     assert [e["type"] for e in ev] == ["warning", "saved"]
     assert ev[0]["frame"] == 1
     assert ev[0]["text"] == "directory sync failed after rename: sync boom"
+
+
+def test_directory_sync_failure_reaches_the_durability_callback_once(tmp_path, monkeypatch):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert [n for n, _ in s.durability] == [1]
+    assert str(s.durability[0][1]) == "sync boom"
+    assert saved == [1] and s.saved == 1 and s.errors == 0 and errors == []
+    assert folder.frame_path(1).exists()

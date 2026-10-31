@@ -457,3 +457,25 @@ def test_frame_write_failure_is_storage_fault_and_earlier_frames_kept(tmp_path):
     assert {p.name: p.read_bytes() for p in reel.frames_dir.glob("*.png")} == before
     assert not list(reel.frames_dir.glob("*.tmp"))
     assert m.accounting.balanced() and m.accounting.pending == 0
+
+
+def test_directory_sync_failure_while_recording_is_storage_fault(tmp_path, monkeypatch):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    film = SimFilm(frames=100, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 5 * film.period_ns)
+    m = rig.machine
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    rig.run_for(S)
+    st = m.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "storage"
+    assert "did not confirm" in st.last_fault.message
+    assert any(a[0] == "problem" and "STOP WorkPrinter 1 NOW" in a[1] for a in rig.alerts)
+    reel = m.reel
+    m.shutdown()
+    assert len(list(reel.frames_dir.glob("*.png"))) >= 1
+    assert m.accounting.balanced() and m.accounting.pending == 0

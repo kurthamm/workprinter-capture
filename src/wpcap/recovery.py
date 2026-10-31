@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from wpcap.reel import Journal, JournalCorrupt, ReelFolder
 
 _FRAME_RE = re.compile(r"^(\d{6})\.png$")
 _TMP_RE = re.compile(r"^(\d{6})\.png\.tmp$")
+_PNG_IEND_TRAILER = b"IEND\xaeB`\x82"  # last chunk type + its fixed CRC; verify() skips that CRC
 
 
 @dataclass(frozen=True)
@@ -48,10 +50,14 @@ def _is_whole_png(path: Path) -> bool:
         return False
     try:
         with Image.open(path) as im:
+            if im.format != "PNG":
+                return False
             im.verify()
+        with path.open("rb") as f:
+            f.seek(-len(_PNG_IEND_TRAILER), os.SEEK_END)
+            return f.read() == _PNG_IEND_TRAILER
     except Exception:  # noqa: BLE001 - the only question is "is this a valid PNG"
         return False
-    return True
 
 
 def recover(folder: ReelFolder) -> RecoveryReport:

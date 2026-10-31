@@ -378,6 +378,17 @@ class Machine:
                 )
             )
 
+    def _on_durability_error(self, n: int, exc: Exception) -> None:
+        with self._event():
+            self._fault(
+                Fault(
+                    "storage",
+                    f"frame {n} saved but the reel drive did not confirm it: {exc}",
+                    "Check the reel drive; frames may not survive a power cut. "
+                    "Wind back, then Resume",
+                )
+            )
+
     # ---- periodic --------------------------------------------------------------------------
 
     def tick(self) -> None:
@@ -559,6 +570,7 @@ class Machine:
             self.config.save_queue,
             partial(self._on_save_error, accounting),
             partial(self._on_save_done, accounting),
+            self._on_durability_error,
         )
         saver.start()
         self.reel, self._journal, self.accounting, self._saver = reel, journal, accounting, saver

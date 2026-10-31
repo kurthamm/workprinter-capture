@@ -93,6 +93,7 @@ class Saver:
         queue_size: int,
         on_error: Callable[[int, Exception], None],
         on_saved: Callable[[int], None],
+        on_durability_error: Callable[[int, Exception], None],
     ) -> None:
         if queue_size < 1:
             raise ValueError("queue_size must be at least 1")
@@ -101,6 +102,7 @@ class Saver:
         self._clock = clock
         self._on_error = on_error
         self._on_saved = on_saved
+        self._on_durability_error = on_durability_error
         self._q: queue.Queue[tuple[int, Picture] | None] = queue.Queue(maxsize=queue_size)
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -210,7 +212,8 @@ class Saver:
             self._write_failed(frame_number, tmp, exc)
             return
         # The rename succeeded, so the frame is complete. A failed directory sync only leaves
-        # its durability across a power cut uncertain: warn, never fail or remove the frame.
+        # its durability across a power cut uncertain: the frame stays booked as saved, a warning
+        # is journaled and the machine is told (on_durability_error) once the frame is booked.
         sync_error: OSError | None = None
         try:
             _fsync_dir(path.parent)
@@ -243,6 +246,8 @@ class Saver:
             self._book_saved(frame_number)
             raise
         self._book_saved(frame_number)
+        if sync_error is not None:
+            self._on_durability_error(frame_number, sync_error)
 
     def _book_saved(self, frame_number: int) -> None:
         with self._lock:

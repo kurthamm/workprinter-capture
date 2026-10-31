@@ -144,3 +144,13 @@ def test_iend_only_and_damaged_pngs_are_corrupt(tmp_path):
     r.frame_path(4).write_bytes(bytes(data))
     rep = recover(r)
     assert rep.corrupt_frames == (3, 4) and rep.complete_frames == (1, 2)
+
+
+def test_jpeg_under_png_name_and_png_cut_at_the_end_are_corrupt(tmp_path):
+    r, _ = reel_with(tmp_path, frames=(1, 2), saved=(1, 2))
+    Image.new("RGB", (2, 2)).save(r.frame_path(4), format="JPEG")
+    write_png(r.frame_path(5))
+    data = r.frame_path(5).read_bytes()
+    r.frame_path(5).write_bytes(data[:-4])  # the final CRC is gone; verify() does not notice
+    rep = recover(r)
+    assert rep.corrupt_frames == (4, 5) and rep.complete_frames == (1, 2)
