@@ -430,14 +430,25 @@ class Machine:
             if self.state in (MachineState.NOT_READY, MachineState.READY, MachineState.RECORDING):
                 self._check_health()
 
-    def _free(self) -> int | None:
-        """Free bytes on the reel drive, or None when the drive itself is gone (an unplugged
-        USB drive: neither the reel root nor its parent exists any more)."""
-        root = self.config.reel_root
+    def _storage(self) -> tuple[int | None, str]:
+        """(free bytes, "") on the reel drive, or (None, why) when it cannot be measured.
+        With a reel open, the reel's own folder is measured: a drive that unmounts leaves its
+        mount point behind, and measuring that would report the host disk instead. Before a
+        reel, the reel root or (not created yet) its parent."""
+        if self.reel is not None:
+            where = self.reel.frames_dir
+            if not where.exists():
+                return None, f"reel folder gone: {where}"
+        else:
+            root = self.config.reel_root
+            where = root if root.exists() else root.parent
         try:
-            return self._free_bytes(root if root.exists() else root.parent)
-        except FileNotFoundError:
-            return None
+            return self._free_bytes(where), ""
+        except OSError as e:
+            return None, f"reel drive not readable: {where}: {e}"
+
+    def _free(self) -> int | None:
+        return self._storage()[0]
 
     def _synced(self) -> bool:
         cs = self.link.clocksync
@@ -476,12 +487,12 @@ class Machine:
         self.state = MachineState.READY if self._is_ready() else MachineState.NOT_READY
 
     def _check_health(self) -> None:
-        free = self._free()
+        free, why = self._storage()
         if free is None:
             self._fault(
                 Fault(
                     "storage",
-                    f"reel drive not found: {self.config.reel_root}",
+                    f"reel drive not found ({why})",
                     "Plug the reel drive back in, wind back, then Resume",
                 )
             )

@@ -541,7 +541,7 @@ def test_vanished_reel_drive_is_a_storage_fault_not_a_crash(tmp_path):
 
     def free_bytes(path: Path) -> int:
         if not present["drive"]:
-            raise FileNotFoundError(2, "No such file or directory", str(path))
+            raise PermissionError(13, "Permission denied", str(path))
         return 10**12
 
     rig = SimRig(cfg(tmp_path), film, free_bytes=free_bytes)
@@ -557,3 +557,20 @@ def test_vanished_reel_drive_is_a_storage_fault_not_a_crash(tmp_path):
     present["drive"] = True
     rig.run_for(1 * S)
     assert rig.machine.status().state in (MachineState.READY, MachineState.RECORDING)
+
+
+def test_reel_folder_vanishing_under_a_live_mount_point_is_a_storage_fault(tmp_path):
+    import shutil
+
+    film = SimFilm(frames=200, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    assert rig.machine.status().state == MachineState.RECORDING
+    shutil.rmtree(rig.machine.reel.path)  # the drive unmounted; the mount point remains
+    rig.run_for(1 * S)
+    st = rig.machine.status()
+    assert st.state == MachineState.STOPPED and st.free_bytes is None
+    assert st.last_fault.kind == "storage"
+    rig.machine.resume()
+    rig.run_for(1 * S)
+    assert rig.machine.status().state == MachineState.NOT_READY
