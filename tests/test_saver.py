@@ -273,3 +273,23 @@ def test_finish_waits_for_queued_frames(tmp_path):
     s.start()
     assert s.finish(5) == []
     assert saved == [1, 2, 3, 4, 5] and not s.alive
+
+
+def test_directory_sync_failure_is_a_warning_not_a_failed_write(tmp_path, monkeypatch):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert folder.frame_path(1).exists()
+    assert errors == [] and saved == [1] and s.errors == 0 and s.saved == 1
+    ev = journal.read_all()
+    assert [e["type"] for e in ev] == ["warning", "saved"]
+    assert ev[0]["frame"] == 1
+    assert ev[0]["text"] == "directory sync failed after rename: sync boom"

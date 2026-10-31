@@ -7,11 +7,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image
+
 from wpcap.reel import Journal, JournalCorrupt, ReelFolder
 
 _FRAME_RE = re.compile(r"^(\d{6})\.png$")
 _TMP_RE = re.compile(r"^(\d{6})\.png\.tmp$")
-_PNG_IEND = b"IEND\xaeB`\x82"  # last 8 bytes of every complete PNG (chunk type + CRC)
 
 
 @dataclass(frozen=True)
@@ -42,12 +43,15 @@ def _terminate_last_line(path: Path) -> None:
 
 
 def _is_whole_png(path: Path) -> bool:
-    with path.open("rb") as f:
-        f.seek(0, 2)
-        if f.tell() < len(_PNG_IEND):
-            return False
-        f.seek(-len(_PNG_IEND), 2)
-        return f.read() == _PNG_IEND
+    """Chunk structure and CRCs are checked (verify() does not decode pixels, so it is cheap)."""
+    if path.stat().st_size == 0:
+        return False
+    try:
+        with Image.open(path) as im:
+            im.verify()
+    except Exception:  # noqa: BLE001 - the only question is "is this a valid PNG"
+        return False
+    return True
 
 
 def recover(folder: ReelFolder) -> RecoveryReport:

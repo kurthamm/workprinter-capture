@@ -1,9 +1,14 @@
 import pytest
+from PIL import Image
 
 from wpcap.recovery import recover, repair
 from wpcap.reel import Journal, JournalCorrupt, ReelFolder
 
 PNG_END = b"IEND\xaeB`\x82"
+
+
+def write_png(path):
+    Image.new("RGB", (2, 2)).save(path)
 
 
 def reel_with(
@@ -13,7 +18,7 @@ def reel_with(
     j = Journal(r.journal_path)
     j.append({"type": "segment_start", "t_ns": 1, "segment": 1, "first_frame": 1})
     for n in frames:
-        r.frame_path(n).write_bytes(b"png" + PNG_END)
+        write_png(r.frame_path(n))
     for n in saved:
         j.append({"type": "saved", "t_ns": 10 + n, "frame": n, "picture_index": n, "t_pic_ns": n})
     for n in tmp:
@@ -128,3 +133,14 @@ def test_zero_byte_and_cut_frames_are_corrupt_not_complete(tmp_path):
     failed = [(e["frame"], e["reason"]) for e in events if e["type"] == "failed"]
     assert failed == [(3, "corrupt after crash"), (4, "corrupt after crash")]
     assert r.frame_path(3).exists() and r.frame_path(4).exists()
+
+
+def test_iend_only_and_damaged_pngs_are_corrupt(tmp_path):
+    r, _ = reel_with(tmp_path, frames=(1, 2), saved=(1, 2))
+    r.frame_path(3).write_bytes(PNG_END)
+    write_png(r.frame_path(4))
+    data = bytearray(r.frame_path(4).read_bytes())
+    data[len(data) // 2 : len(data) // 2 + 4] = b"\xff\xff\xff\xff"
+    r.frame_path(4).write_bytes(bytes(data))
+    rep = recover(r)
+    assert rep.corrupt_frames == (3, 4) and rep.complete_frames == (1, 2)

@@ -30,7 +30,11 @@ def test_bad_names_rejected(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "name", ["Smith: wedding", "CON", "con.txt", "LPT3", "name.", "name ", "a\x01b", "a?b", "a|b"]
+    "name",
+    [
+        "Smith: wedding", "CON", "con.txt", "LPT3", "COM¹", "lpt².txt",
+        "name.", "name ", "a\x01b", "a?b", "a|b",
+    ],
 )
 def test_names_windows_cannot_create_rejected(tmp_path, name):
     with pytest.raises(ValueError):

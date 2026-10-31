@@ -206,13 +206,28 @@ class Saver:
             if path.exists():
                 raise _FrameExists(f"frame already exists: {path}")
             tmp.replace(path)
-            _fsync_dir(path.parent)
         except Exception as exc:  # noqa: BLE001 - every failure is journaled and reported upward
             self._write_failed(frame_number, tmp, exc)
             return
+        # The rename succeeded, so the frame is complete. A failed directory sync only leaves
+        # its durability across a power cut uncertain: warn, never fail or remove the frame.
+        sync_error: OSError | None = None
+        try:
+            _fsync_dir(path.parent)
+        except OSError as e:
+            sync_error = e
         # The frame is on disk. Anything failing from here is not a write failure; it
         # propagates, ends the worker, and `alive` goes false for the machine to fault on.
         try:
+            if sync_error is not None:
+                self._journal.append(
+                    {
+                        "type": "warning",
+                        "t_ns": self._clock.now_ns(),
+                        "frame": frame_number,
+                        "text": f"directory sync failed after rename: {sync_error}",
+                    }
+                )
             self._journal.append(
                 {
                     "type": "saved",
