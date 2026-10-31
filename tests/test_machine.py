@@ -479,3 +479,26 @@ def test_directory_sync_failure_while_recording_is_storage_fault(tmp_path, monke
     m.shutdown()
     assert len(list(reel.frames_dir.glob("*.png"))) >= 1
     assert m.accounting.balanced() and m.accounting.pending == 0
+
+
+def test_late_error_from_closed_reel_warns_and_leaves_new_reel_recording(tmp_path):
+    film = SimFilm(frames=60, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    m = rig.machine
+    while m.state != MachineState.REEL_FINISHED:
+        assert rig.clock.now_ns() < 3 * S + 100 * film.period_ns, "reel never finished"
+        rig.run_for(1_000_000)
+    old = m._saver
+    m.new_reel(ReelMeta(name="second"))
+    while m.state != MachineState.RECORDING:
+        assert rig.clock.now_ns() < 3 * S + 200 * film.period_ns, "second reel never started"
+        rig.run_for(1_000_000)
+    problems = sum(a[0] == "problem" for a in rig.alerts)
+    old._on_error(5, OSError("late"))
+    old._on_durability_error(6, OSError("late sync"))
+    assert m.state == MachineState.RECORDING
+    late = [a for a in rig.alerts if a[0] == "warning" and "previous reel" in a[2]]
+    assert len(late) == 2
+    assert sum(a[0] == "problem" for a in rig.alerts) == problems
+    m.shutdown()
+    assert m.accounting.balanced() and m.accounting.pending == 0

@@ -134,6 +134,7 @@ class Machine:
         self.reel: ReelFolder | None = None
         self._journal: Journal | None = None
         self._saver: Saver | None = None
+        self._reel_token: object | None = None
         self._pending_meta: ReelMeta | None = None
         self.segment = 0
         self._next_frame = 1
@@ -363,23 +364,35 @@ class Machine:
             )
         )
 
-    # The saver callbacks are bound to the accounting of the reel the saver belongs to, so a
-    # saver still draining after new_reel() never books into the next reel.
+    # The saver callbacks are bound to the accounting and the token of the reel the saver
+    # belongs to, so a saver still draining after new_reel() never books into, or stops, the
+    # next reel.
+    def _is_current(self, token: object) -> bool:
+        return self._saver is not None and token is self._reel_token
+
     def _on_save_done(self, accounting: Accounting, n: int) -> None:
         with self._event():
             accounting.saved_one()
 
-    def _on_save_error(self, accounting: Accounting, n: int, exc: Exception) -> None:
+    def _on_save_error(
+        self, accounting: Accounting, token: object, n: int, exc: Exception
+    ) -> None:
         with self._event():
             accounting.failed_one()
+            if not self._is_current(token):
+                self._warn_previous_reel(n, exc)
+                return
             self._fault(
                 Fault(
                     "storage", f"frame {n}: {exc}", "Check the reel drive, wind back, then Resume"
                 )
             )
 
-    def _on_durability_error(self, n: int, exc: Exception) -> None:
+    def _on_durability_error(self, token: object, n: int, exc: Exception) -> None:
         with self._event():
+            if not self._is_current(token):
+                self._warn_previous_reel(n, exc)
+                return
             self._fault(
                 Fault(
                     "storage",
@@ -388,6 +401,10 @@ class Machine:
                     "Wind back, then Resume",
                 )
             )
+
+    def _warn_previous_reel(self, n: int, exc: Exception) -> None:
+        """A closed reel's saver reported late: the current reel is untouched."""
+        self._alerter.alert("warning", self.config.name, f"previous reel: frame {n}: {exc}")
 
     # ---- periodic --------------------------------------------------------------------------
 
@@ -563,17 +580,19 @@ class Machine:
         )
         journal = Journal(reel.journal_path)
         accounting = Accounting()
+        token = object()
         saver = Saver(
             reel,
             journal,
             self._clock,
             self.config.save_queue,
-            partial(self._on_save_error, accounting),
+            partial(self._on_save_error, accounting, token),
             partial(self._on_save_done, accounting),
-            self._on_durability_error,
+            partial(self._on_durability_error, token),
         )
         saver.start()
         self.reel, self._journal, self.accounting, self._saver = reel, journal, accounting, saver
+        self._reel_token = token
         self.segment = 1
         self._next_frame = 1
         self._gate.reset()
