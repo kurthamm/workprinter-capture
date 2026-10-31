@@ -101,7 +101,7 @@ class MachineStatus:
     bounces: int
     fps: float
     sync_error_ms: float
-    free_bytes: int
+    free_bytes: int | None  # None: the reel drive is not there
     last_fault: Fault | None
     warnings: tuple[str, ...] = field(default_factory=tuple)
 
@@ -430,9 +430,14 @@ class Machine:
             if self.state in (MachineState.NOT_READY, MachineState.READY, MachineState.RECORDING):
                 self._check_health()
 
-    def _free(self) -> int:
+    def _free(self) -> int | None:
+        """Free bytes on the reel drive, or None when the drive itself is gone (an unplugged
+        USB drive: neither the reel root nor its parent exists any more)."""
         root = self.config.reel_root
-        return self._free_bytes(root if root.exists() else root.parent)
+        try:
+            return self._free_bytes(root if root.exists() else root.parent)
+        except FileNotFoundError:
+            return None
 
     def _synced(self) -> bool:
         cs = self.link.clocksync
@@ -451,9 +456,13 @@ class Machine:
             and self.link.responsive
             and self._camera_fresh()
             and self._last_shape == self._first_shape
-            and self._free() >= self.config.min_free_bytes
+            and self._enough_free()
             and self._saver_alive()
         )
+
+    def _enough_free(self) -> bool:
+        free = self._free()
+        return free is not None and free >= self.config.min_free_bytes
 
     def _saver_alive(self) -> bool:
         """No reel yet, or the reel's saver thread is running. A dead saver cannot be
@@ -467,6 +476,15 @@ class Machine:
         self.state = MachineState.READY if self._is_ready() else MachineState.NOT_READY
 
     def _check_health(self) -> None:
+        free = self._free()
+        if free is None:
+            self._fault(
+                Fault(
+                    "storage",
+                    f"reel drive not found: {self.config.reel_root}",
+                    "Plug the reel drive back in, wind back, then Resume",
+                )
+            )
         if not self._saver_alive():
             self._fault(
                 Fault(
@@ -484,7 +502,6 @@ class Machine:
             if not self._is_ready():
                 self.state = MachineState.NOT_READY
         elif self.state == MachineState.RECORDING:
-            free = self._free()
             if not self._synced():
                 self._fault(
                     Fault(
@@ -493,7 +510,7 @@ class Machine:
                         "Check the sync box USB connection, wind back, then Resume",
                     )
                 )
-            elif free < self.config.min_free_bytes:
+            elif free is not None and free < self.config.min_free_bytes:
                 self._fault(
                     Fault(
                         "storage",

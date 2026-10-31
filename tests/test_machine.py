@@ -533,3 +533,27 @@ def test_dead_saver_blocks_resume_until_a_new_reel(tmp_path):
     rig.machine.new_reel(ReelMeta(name="Reel 2"))
     rig.run_for(1 * S)
     assert rig.machine.status().state in (MachineState.READY, MachineState.RECORDING)
+
+
+def test_vanished_reel_drive_is_a_storage_fault_not_a_crash(tmp_path):
+    film = SimFilm(frames=200, start_ns=3 * S)
+    present = {"drive": True}
+
+    def free_bytes(path: Path) -> int:
+        if not present["drive"]:
+            raise FileNotFoundError(2, "No such file or directory", str(path))
+        return 10**12
+
+    rig = SimRig(cfg(tmp_path), film, free_bytes=free_bytes)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    assert rig.machine.status().state == MachineState.RECORDING
+    present["drive"] = False
+    rig.run_for(1 * S)
+    st = rig.machine.status()  # must not raise
+    assert st.state == MachineState.STOPPED and st.free_bytes is None
+    assert st.last_fault.kind == "storage" and "reel drive not found" in st.last_fault.message
+    rig.machine.resume()
+    assert rig.machine.status().state == MachineState.NOT_READY
+    present["drive"] = True
+    rig.run_for(1 * S)
+    assert rig.machine.status().state in (MachineState.READY, MachineState.RECORDING)
