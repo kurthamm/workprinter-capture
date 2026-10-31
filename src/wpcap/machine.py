@@ -204,7 +204,12 @@ class Machine:
         if meta.name is not None:
             ReelFolder.check_name(meta.name)
         with self._event():
-            allowed = (MachineState.READY, MachineState.REEL_FINISHED, MachineState.STOPPED)
+            allowed = (
+                MachineState.NOT_READY,
+                MachineState.READY,
+                MachineState.REEL_FINISHED,
+                MachineState.STOPPED,
+            )
             if self.state not in allowed:
                 raise RuntimeError(f"cannot start a new reel while {self.state}")
             saver, accounting, journal = self._detach_reel()
@@ -447,7 +452,13 @@ class Machine:
             and self._camera_fresh()
             and self._last_shape == self._first_shape
             and self._free() >= self.config.min_free_bytes
+            and self._saver_alive()
         )
+
+    def _saver_alive(self) -> bool:
+        """No reel yet, or the reel's saver thread is running. A dead saver cannot be
+        restarted: the machine stays Not ready until a new reel brings a new saver."""
+        return self._saver is None or self._saver.alive
 
     def _enter_ready_if_ready(self) -> None:
         """Operator action done (resume, new reel): Ready only if every check passes now."""
@@ -456,6 +467,14 @@ class Machine:
         self.state = MachineState.READY if self._is_ready() else MachineState.NOT_READY
 
     def _check_health(self) -> None:
+        if not self._saver_alive():
+            self._fault(
+                Fault(
+                    "storage",
+                    "saver stopped unexpectedly",
+                    "Check the reel drive, then start a new reel",
+                )
+            )
         if self.state == MachineState.NOT_READY:
             if self._is_ready():
                 self.state = MachineState.READY
@@ -480,12 +499,6 @@ class Machine:
                         "storage",
                         f"reel drive nearly full ({free / 1e9:.1f} GB free)",
                         "Free space on the reel drive, wind back, then Resume",
-                    )
-                )
-            elif self._saver is not None and not self._saver.alive:
-                self._fault(
-                    Fault(
-                        "storage", "saver stopped unexpectedly", "Check the reel drive and restart"
                     )
                 )
             elif not self._camera_fresh():

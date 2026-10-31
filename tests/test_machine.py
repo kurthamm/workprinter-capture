@@ -502,3 +502,34 @@ def test_late_error_from_closed_reel_warns_and_leaves_new_reel_recording(tmp_pat
     assert sum(a[0] == "problem" for a in rig.alerts) == problems
     m.shutdown()
     assert m.accounting.balanced() and m.accounting.pending == 0
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_dead_saver_blocks_resume_until_a_new_reel(tmp_path):
+    film = SimFilm(frames=200, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    assert rig.machine.status().state == MachineState.RECORDING
+    saver = rig.machine._saver
+    original = saver._journal.append
+
+    def dying_append(event):
+        if event["type"] == "saved":
+            raise OSError(5, "Input/output error")
+        original(event)
+
+    saver._journal.append = dying_append  # the next saved frame ends the worker
+    rig.run_for(2 * S)
+    assert not saver.alive
+    st = rig.machine.status()
+    assert st.state == MachineState.STOPPED
+    assert st.last_fault.kind == "storage" and "saver stopped" in st.last_fault.message
+    rig.machine.resume()
+    assert rig.machine.status().state == MachineState.NOT_READY
+    rig.run_for(2 * S)  # ticks must not promote to Ready, and must say why once
+    assert rig.machine.status().state == MachineState.NOT_READY
+    assert [f.message for f in rig.machine.fault_history].count("saver stopped unexpectedly") == 2
+    assert "new reel" in rig.machine.fault_history[-1].action
+    rig.machine.new_reel(ReelMeta(name="Reel 2"))
+    rig.run_for(1 * S)
+    assert rig.machine.status().state in (MachineState.READY, MachineState.RECORDING)
