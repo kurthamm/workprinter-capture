@@ -244,6 +244,8 @@ class Saver:
             # The frame is complete on disk, so it is booked as saved (recovery lists it as
             # on disk but not journaled); then the worker ends and the machine faults.
             self._book_saved(frame_number)
+            if sync_error is not None:
+                self._on_durability_error(frame_number, sync_error)
             raise
         self._book_saved(frame_number)
         if sync_error is not None:

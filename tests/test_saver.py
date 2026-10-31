@@ -301,6 +301,28 @@ def test_directory_sync_failure_is_a_warning_not_a_failed_write(tmp_path, monkey
     assert ev[0]["text"] == "directory sync failed after rename: sync boom"
 
 
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_directory_sync_failure_is_reported_even_when_the_journal_is_unwritable(
+    tmp_path, monkeypatch
+):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    folder, journal, s, errors, saved = make(tmp_path)
+    journal.path.mkdir()  # the journal cannot be appended to
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert [n for n, _ in s.durability] == [1]
+    assert str(s.durability[0][1]) == "sync boom"
+    assert saved == [1] and s.saved == 1
+    assert not s.alive
+
+
 def test_directory_sync_failure_reaches_the_durability_callback_once(tmp_path, monkeypatch):
     import wpcap.saver as saver_mod
 
