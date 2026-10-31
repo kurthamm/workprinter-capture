@@ -574,3 +574,24 @@ def test_reel_folder_vanishing_under_a_live_mount_point_is_a_storage_fault(tmp_p
     rig.machine.resume()
     rig.run_for(1 * S)
     assert rig.machine.status().state == MachineState.NOT_READY
+
+
+def test_unreadable_reel_folder_is_a_storage_fault(tmp_path, monkeypatch):
+    import pathlib
+
+    film = SimFilm(frames=200, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 30 * film.period_ns)
+    frames_dir = rig.machine.reel.frames_dir
+    real_exists = pathlib.Path.exists
+
+    def exists(self):
+        if self == frames_dir:
+            raise PermissionError(13, "Permission denied", str(self))
+        return real_exists(self)
+
+    monkeypatch.setattr(pathlib.Path, "exists", exists)
+    rig.run_for(1 * S)
+    st = rig.machine.status()  # must not raise
+    assert st.state == MachineState.STOPPED and st.free_bytes is None
+    assert st.last_fault.kind == "storage" and "Permission denied" in st.last_fault.message

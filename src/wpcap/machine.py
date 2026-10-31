@@ -435,14 +435,14 @@ class Machine:
         With a reel open, the reel's own folder is measured: a drive that unmounts leaves its
         mount point behind, and measuring that would report the host disk instead. Before a
         reel, the reel root or (not created yet) its parent."""
-        if self.reel is not None:
-            where = self.reel.frames_dir
-            if not where.exists():
-                return None, f"reel folder gone: {where}"
-        else:
-            root = self.config.reel_root
-            where = root if root.exists() else root.parent
+        where = self.config.reel_root
         try:
+            if self.reel is not None:
+                where = self.reel.frames_dir
+                if not where.exists():
+                    return None, f"reel folder gone: {where}"
+            elif not where.exists():
+                where = where.parent
             return self._free_bytes(where), ""
         except OSError as e:
             return None, f"reel drive not readable: {where}: {e}"
