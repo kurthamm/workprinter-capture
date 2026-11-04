@@ -219,6 +219,8 @@ def test_calibration_and_delay(client, svc, film_frames):
         client.post("/api/machines/WorkPrinter 1/delay", json={"delay_ms": 55.0}).status_code == 200
     )
     assert client.get("/api/status").json()["machines"][0]["delay_ms"] == 55.0
+    # the strip still carries the delay its click was picked with (offsets are relative to it)
+    assert client.get(cal_url).json()["delay_ms"] == 40.0
     assert (
         client.post("/api/machines/WorkPrinter 1/delay", json={"delay_ms": -5}).status_code == 400
     )

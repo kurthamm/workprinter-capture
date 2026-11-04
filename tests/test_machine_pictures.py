@@ -59,10 +59,11 @@ def test_last_saved_only_shows_frames_on_disk(tmp_path):
 def test_click_window_brackets_the_last_click(tmp_path):
     film = SimFilm(frames=50, start_ns=3 * S)
     rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
-    assert rig.machine.click_window() == []
+    assert rig.machine.click_window() == (None, [])
     # click 21, its 40 ms delay, then 70 ms more so 3+ pictures follow the target
     rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
-    window = rig.machine.click_window()
+    delay_ms, window = rig.machine.click_window()
+    assert delay_ms == 40.0
     offsets = [ms for ms, _ in window]
     assert len(window) == 7
     assert offsets == sorted(offsets)
@@ -78,7 +79,7 @@ def test_click_window_survives_stop_and_the_camera_streaming_on(tmp_path):
     n, _ = rig.machine.last_saved()
     # the ring buffer holds about one second; the operator calibrates later than that
     rig.run_for(2 * S)
-    window = rig.machine.click_window()
+    _, window = rig.machine.click_window()
     offsets = [ms for ms, _ in window]
     assert len(window) == 7
     assert all(abs(ms) <= 60 for ms in offsets), offsets
@@ -91,9 +92,30 @@ def test_click_window_is_empty_on_a_new_reel(tmp_path):
     rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
     rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
     rig.machine.stop()
-    assert len(rig.machine.click_window()) == 7
+    assert len(rig.machine.click_window()[1]) == 7
     rig.machine.new_reel(ReelMeta())
-    assert rig.machine.click_window() == []
+    assert rig.machine.click_window() == (None, [])
+
+
+def test_strip_keeps_the_delay_it_was_taken_at(tmp_path):
+    film = SimFilm(frames=80, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
+    rig.machine.stop()
+    delay_ms, window = rig.machine.click_window()
+    off, pic = window[4]
+    proposed = delay_ms + off
+    rig.machine.set_delay_ms(proposed)  # the operator picks picture 4
+    # Calibrate again before any new click: the same strip, still at the delay it was taken at,
+    # so the same picture proposes the same delay (not the offset added twice)
+    delay2, window2 = rig.machine.click_window()
+    assert delay2 == 40.0 and window2[4][1] is pic
+    assert delay2 + window2[4][0] == proposed
+    # the next click is picked with the new delay, and its strip says so
+    rig.machine.resume()
+    rig.run_for(S)
+    delay3, window3 = rig.machine.click_window()
+    assert delay3 == proposed and len(window3) == 7
 
 
 def test_set_delay_takes_effect_next_click_and_is_recorded(tmp_path):

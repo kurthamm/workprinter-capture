@@ -314,3 +314,14 @@ def test_gen_cert_replace_with_a_bad_ip_keeps_the_old_certificate(tmp_path):
     r = run("gen-cert", "--certs", str(tmp_path / "c"), "--ip", "not-an-ip", "--replace")
     assert r.returncode == 2 and "not an IP address" in r.stderr
     assert (crt.read_bytes(), key.read_bytes()) == before
+
+
+def test_serve_failed_start_does_not_claim_a_clean_stop(tmp_path):
+    out = tmp_path / "wpcap.toml"
+    r = run("init-config", "--out", str(out), "--reels", str(tmp_path / "reels"),
+            "--certs", str(tmp_path / "certs"), "--password", "pw")
+    assert r.returncode == 0, r.stderr
+    (tmp_path / "reels" / "WorkPrinter 2").rmdir()  # the reel drive is missing
+    r = run("serve", "--config", str(out))
+    assert r.returncode == 2 and "cannot start" in r.stderr
+    assert "stopped:" not in r.stdout

@@ -181,7 +181,8 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
     @app.get("/api/machines/{name}/calibration", dependencies=[Depends(require_login)])
     def calibration(name: str):
         m = machine(name)
-        window = m.click_window()
+        # The strip's own delay: its offsets were measured with it, whatever is set now.
+        delay_ms, window = m.click_window()
         pics = [to_jpeg(p.pixels) for _, p in window]
         with cal_lock:
             sets = calibration_sets.setdefault(name, {})
@@ -190,7 +191,7 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
             while len(sets) > CALIBRATION_SETS_KEPT:
                 del sets[min(sets)]
         return {
-            "delay_ms": m.config.delay_ms,
+            "delay_ms": delay_ms,
             "pictures": [
                 {
                     "offset_ms": off,

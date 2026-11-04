@@ -191,7 +191,18 @@ def renew_cert_if_expiring(cert_file: Path, key_file: Path) -> None:
             file=sys.stderr,
         )
         return
-    new_after = renew_server_cert(ca_crt, ca_key, cert_file, key_file)
+    try:
+        new_after = renew_server_cert(ca_crt, ca_key, cert_file, key_file)
+    except Exception as e:  # noqa: BLE001 - reported; fatal below only if the old one expired
+        if not_after <= dt.datetime.now(dt.UTC):
+            raise
+        print(
+            f"warning: could not renew the certificate {cert_file} ({type(e).__name__}: {e}); "
+            f"keeping it until it expires {not_after:%Y-%m-%d %H:%M} UTC. Make a new one with: "
+            f"wpcap gen-cert --replace --certs {cert_file.parent}",
+            file=sys.stderr,
+        )
+        return
     print(f"renewed certificate, valid until {new_after:%Y-%m-%d}", flush=True)
 
 
@@ -224,12 +235,14 @@ def cmd_serve(args: argparse.Namespace) -> int:
             return 2
     renew_cert_if_expiring(config.server.cert_file, config.server.key_file)
     service = Service(config)
+    started = False
     try:
         try:
             service.start()
         except ServiceError as e:
             print(f"cannot start: {e}", file=sys.stderr)
             return 2
+        started = True
         app = create_app(service, config)
         hosts, ips = local_names()
         # The server listens on the configured address only; list names that reach it.
@@ -265,7 +278,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         # A Ctrl+C during a slow stop must still interrupt it, not be absorbed.
         signal.signal(signal.SIGINT, signal.default_int_handler)
         service.stop()
-        print("stopped: machines shut down, reels closed", flush=True)
+        if started:
+            print("stopped: machines shut down, reels closed", flush=True)
     return 0
 
 

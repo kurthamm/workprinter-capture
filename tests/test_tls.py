@@ -120,3 +120,36 @@ def test_failed_certificate_write_removes_the_new_key(tmp_path, monkeypatch):
     with pytest.raises(OSError, match="disk full"):
         make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [])
     assert not key.exists() and not crt.exists()
+
+
+def test_failed_renewal_keeps_a_still_valid_certificate(tmp_path, capsys, monkeypatch):
+    import wpcap.__main__ as cli
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+    crt, key = tmp_path / "wpcap.crt", tmp_path / "wpcap.key"
+    make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [], days=10)
+    before = crt.read_bytes()
+
+    def broken(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cli, "renew_server_cert", broken)
+    cli.renew_cert_if_expiring(crt, key)
+    err = capsys.readouterr().err
+    assert "could not renew" in err and "disk full" in err and "wpcap gen-cert --replace" in err
+    assert crt.read_bytes() == before
+
+
+def test_failed_renewal_of_an_expired_certificate_stops_startup(tmp_path, monkeypatch):
+    import wpcap.__main__ as cli
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+    crt, key = tmp_path / "wpcap.crt", tmp_path / "wpcap.key"
+    make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [], days=0)  # expired 5 min ago
+
+    def broken(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(cli, "renew_server_cert", broken)
+    with pytest.raises(OSError, match="disk full"):
+        cli.renew_cert_if_expiring(crt, key)

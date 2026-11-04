@@ -164,6 +164,10 @@ class Machine:
         # after Stop (the ring buffer only holds about a second).
         self._cal_pending_target: int | None = None
         self._cal_window: list[tuple[int, Picture]] = []
+        # The delay the strip's click was picked with: its offsets are relative to that delay,
+        # not to one set since (else a second Calibrate would add the offset twice).
+        self._cal_pending_delay_ms: float | None = None
+        self._cal_delay_ms: float | None = None
         self._pictures_seen = 0
         # Fault kinds already raised while their condition persists: each is raised once,
         # and forgotten on resume, new reel, a new segment, or when the machine is Ready again.
@@ -288,6 +292,7 @@ class Machine:
                     (round((q.t_ns - target) / 1e6), q)
                     for q in self._picker.buffer.window(target, CAL_BEFORE, CAL_AFTER)
                 ]
+                self._cal_delay_ms = self._cal_pending_delay_ms
                 self._cal_pending_target = None
 
     def on_bounce(self, seq: int, t_us: int) -> None:
@@ -364,6 +369,7 @@ class Machine:
             )
             self._picker.on_click(PendingClick(ev, n, 0))
             self._cal_pending_target = self._picker.last_target_ns
+            self._cal_pending_delay_ms = self.config.delay_ms
 
     def _on_picked(self, picked: Picked) -> None:
         n = picked.pending.frame_number
@@ -602,12 +608,14 @@ class Machine:
         with self._lock:
             return self._last_saved
 
-    def click_window(self) -> list[tuple[int, Picture]]:
-        """The CAL_BEFORE + 1 + CAL_AFTER pictures around the target time of the last click
-        that is at least CAL_SNAPSHOT_AFTER_NS old, with their offset in ms (rounded), oldest
-        first. Empty before such a click on this reel."""
+    def click_window(self) -> tuple[float | None, list[tuple[int, Picture]]]:
+        """(delay_ms, pictures): the CAL_BEFORE + 1 + CAL_AFTER pictures around the target time
+        of the last click that is at least CAL_SNAPSHOT_AFTER_NS old, with their offset in ms
+        (rounded) from that target, oldest first, and the delay that click was picked with
+        (delay + offset is the delay that would pick each picture). (None, []) before such a
+        click on this reel."""
         with self._lock:
-            return list(self._cal_window)
+            return self._cal_delay_ms, list(self._cal_window)
 
     def set_delay_ms(self, delay_ms: float) -> None:
         """Calibration: the delay from switch closure to the sharp picture. Not while recording
@@ -742,6 +750,7 @@ class Machine:
         """Under the lock: close the open reel; return its saver, accounting and journal."""
         self._replace_picker("reel closed")
         self._cal_window = []
+        self._cal_delay_ms = None
         self._inflight_pictures = {}
         saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
