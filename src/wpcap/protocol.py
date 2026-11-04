@@ -6,6 +6,7 @@ one shared sequence number so a lost or repeated message is detected, never skip
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 SEQ_MODULO = 2**32
@@ -86,13 +87,15 @@ def _unframe(line: bytes) -> list[bytes]:
     return body.split(b" ")
 
 
+_INT_RE = re.compile(rb"-?[0-9]+")
+
+
 def _ints(fields: list[bytes], line: bytes) -> list[int]:
     out = []
     for f in fields:
-        try:
-            out.append(int(f))
-        except ValueError as e:
-            raise ProtocolError(f"non-integer field {f!r} in {line!r}") from e
+        if not _INT_RE.fullmatch(f):
+            raise ProtocolError(f"non-integer field {f!r} in {line!r}")
+        out.append(int(f))
     return out
 
 

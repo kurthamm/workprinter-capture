@@ -241,9 +241,10 @@ def test_thousand_frames_none_lost_or_doubled(tmp_path):
     film = SimFilm(frames=1000, start_ns=3 * S)
     rig = SimRig(cfg(tmp_path, delay_ms=40.0), film, drift_ppm=25, offset_us=-777_000)
     rig.run_until(3 * S + 1040 * film.period_ns)
+    finished = rig.machine.status().state
     rig.machine.shutdown()
     st = rig.machine.status()
-    assert st.state == MachineState.REEL_FINISHED and st.frames_failed == 0
+    assert finished == MachineState.REEL_FINISHED and st.frames_failed == 0
     assert frame_numbers(ReelFolder.open(rig.machine.reel.path))[:1000] == list(range(1, 1001))
     assert rig.machine.accounting.balanced()
 
@@ -595,3 +596,48 @@ def test_unreadable_reel_folder_is_a_storage_fault(tmp_path, monkeypatch):
     st = rig.machine.status()  # must not raise
     assert st.state == MachineState.STOPPED and st.free_bytes is None
     assert st.last_fault.kind == "storage" and "Permission denied" in st.last_fault.message
+
+
+def test_shutdown_leaves_machine_shut_down_and_rejects_actions(tmp_path):
+    film = SimFilm(frames=60, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(3 * S + 10 * film.period_ns)
+    rig.machine.shutdown()
+    st = rig.machine.status()
+    assert st.state == MachineState.SHUT_DOWN
+    with pytest.raises(RuntimeError, match="shut down"):
+        rig.machine.resume()
+    with pytest.raises(RuntimeError, match="shut down"):
+        rig.machine.new_reel(ReelMeta(name="After"))
+    rig.machine.tick()  # ticks after shutdown are harmless
+    assert rig.machine.status().state == MachineState.SHUT_DOWN
+
+
+def test_new_reel_rejects_unknown_film_type(tmp_path):
+    rig = SimRig(cfg(tmp_path), SimFilm(frames=30, start_ns=3 * S))
+    with pytest.raises(ValueError, match="film_type"):
+        rig.machine.new_reel(ReelMeta(film_type="16mm"))
+
+
+def test_rig_alerts_need_a_recording_alerter(tmp_path):
+    class Quiet:
+        def alert(self, level, title, message):
+            pass
+
+    rig = SimRig(cfg(tmp_path), SimFilm(frames=0, start_ns=10 * S), alerter=Quiet())
+    with pytest.raises(TypeError, match="RecordingAlerter"):
+        _ = rig.alerts
+
+
+def test_open_reel_film_type_comes_from_new_reel(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.machine.new_reel(ReelMeta(film_type="regular8"))
+    assert rig.machine.status().reel_film_type is None  # no reel until the film moves
+    rig.run_until(3 * S + 5 * film.period_ns)
+    st = rig.machine.status()
+    assert st.state == MachineState.RECORDING and st.reel_film_type == "regular8"
+    assert rig.machine.reel.read_reel_json()["film_type"] == "regular8"
+    rig.machine.stop()
+    rig.machine.new_reel(ReelMeta())
+    assert rig.machine.status().reel_film_type is None

@@ -31,9 +31,16 @@ class MachineState(StrEnum):
     RECORDING = "recording"
     REEL_FINISHED = "reel_finished"
     STOPPED = "stopped"
+    SHUT_DOWN = "shut_down"
 
 
 FAULT_KINDS = {"camera", "missed_frame", "storage", "sync", "sync_box", "operator", "accounting"}
+
+# Calibration strip: pictures before and after the one nearest a click's target time, copied
+# once the newest picture is this far past the target (3 pictures at 60 fps are 50 ms).
+CAL_BEFORE = 3
+CAL_AFTER = 3
+CAL_SNAPSHOT_AFTER_NS = 60_000_000
 
 
 @dataclass(frozen=True)
@@ -75,6 +82,7 @@ class MachineConfig:
     gate_std_max: float = 8.0
     gate_empty_needed: int = 24
     gate_min_frames: int = 100
+    film_type: str = "super8"  # a reel opened by the first click, with no New Reel before it
     exposure_jump: float = 25.0
     min_free_bytes: int = 2 * 1024**3
     max_interval_ratio: float = 2.0
@@ -104,6 +112,7 @@ class MachineStatus:
     free_bytes: int | None  # None: the reel drive is not there
     last_fault: Fault | None
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    reel_film_type: str | None = None  # the open reel's film type (chosen in New Reel)
 
 
 def _free_bytes(path: Path) -> int:
@@ -132,6 +141,7 @@ class Machine:
         self._lock = threading.RLock()
         self.state = MachineState.NOT_READY
         self.reel: ReelFolder | None = None
+        self.reel_film_type: str | None = None  # as written to the open reel's reel.json
         self._journal: Journal | None = None
         self._saver: Saver | None = None
         self._reel_token: object | None = None
@@ -145,6 +155,20 @@ class Machine:
         self._first_shape: tuple[int, int] | None = None
         self._last_shape: tuple[int, int] | None = None
         self._last_picture_ns: int | None = None
+        self._live: Picture | None = None
+        # The newest frame the saver confirmed on disk, for the page's "last saved" (the operator
+        # winds back to it). Pictures handed to the current reel's saver wait in _inflight_pictures.
+        self._last_saved: tuple[int, Picture] | None = None
+        self._inflight_pictures: dict[int, Picture] = {}
+        # Calibration: the pictures around the last click are copied (references only) once
+        # the click is CAL_SNAPSHOT_AFTER_NS old, so the strip survives the camera streaming on
+        # after Stop (the ring buffer only holds about a second).
+        self._cal_pending_target: int | None = None
+        self._cal_window: list[tuple[int, Picture]] = []
+        # The delay the strip's click was picked with: its offsets are relative to that delay,
+        # not to one set since (else a second Calibrate would add the offset twice).
+        self._cal_pending_delay_ms: float | None = None
+        self._cal_delay_ms: float | None = None
         self._pictures_seen = 0
         # Fault kinds already raised while their condition persists: each is raised once,
         # and forgotten on resume, new reel, a new segment, or when the machine is Ready again.
@@ -197,13 +221,19 @@ class Machine:
             accounting, journal = self.accounting, self._journal
         # The saver's callbacks take the machine lock, so drain it with the lock released.
         self._drain_saver(saver, accounting, journal)
+        with self._lock:
+            self.state = MachineState.SHUT_DOWN
 
     # ---- operator actions ------------------------------------------------------------------
 
     def new_reel(self, meta: ReelMeta) -> None:
+        if meta.film_type not in ("super8", "regular8"):
+            raise ValueError(f"film_type must be 'super8' or 'regular8', not {meta.film_type!r}")
         if meta.name is not None:
             ReelFolder.check_name(meta.name)
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                raise RuntimeError("machine is shut down")
             allowed = (
                 MachineState.NOT_READY,
                 MachineState.READY,
@@ -223,6 +253,8 @@ class Machine:
 
     def resume(self) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                raise RuntimeError("machine is shut down")
             if self.state != MachineState.STOPPED:
                 raise RuntimeError(f"resume only from stopped, not {self.state}")
             if self.reel is None:
@@ -237,8 +269,11 @@ class Machine:
 
     def on_picture(self, p: Picture) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             self._pictures_seen += 1
             self._last_picture_ns = p.t_ns
+            self._live = p
             self._last_shape = p.shape
             if self._first_shape is None:
                 self._first_shape = p.shape
@@ -252,20 +287,34 @@ class Machine:
                 )
                 return
             self._picker.on_picture(p)
+            target = self._cal_pending_target
+            if target is not None and p.t_ns >= target + CAL_SNAPSHOT_AFTER_NS:
+                self._cal_window = [
+                    (round((q.t_ns - target) / 1e6), q)
+                    for q in self._picker.buffer.window(target, CAL_BEFORE, CAL_AFTER)
+                ]
+                self._cal_delay_ms = self._cal_pending_delay_ms
+                self._cal_pending_target = None
 
     def on_bounce(self, seq: int, t_us: int) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             self.bounces += 1
             self._journal_event({"type": "bounce", "seq": seq, "t_box_us": t_us})
 
     def on_unsynced_click(self, seq: int) -> None:
         """A closure arrived before the clocks are in sync: the film is moving too early."""
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             self._journal_event({"type": "ignored_click", "seq": seq, "state": "unsynced"})
             self._warn_not_ready()
 
     def on_click(self, ev: ClickEvent) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             if self.state == MachineState.READY:
                 self._open_segment()
             if self.state != MachineState.RECORDING:
@@ -320,6 +369,8 @@ class Machine:
                 }
             )
             self._picker.on_click(PendingClick(ev, n, 0))
+            self._cal_pending_target = self._picker.last_target_ns
+            self._cal_pending_delay_ms = self.config.delay_ms
 
     def _on_picked(self, picked: Picked) -> None:
         n = picked.pending.frame_number
@@ -331,9 +382,13 @@ class Machine:
                 "offset_ns": picked.offset_ns,
             }
         )
+        # Recorded before submit: the saver's callbacks wait for the machine lock, which this
+        # thread holds, but an inline callback (same thread, re-entrant lock) must find it too.
+        self._inflight_pictures[n] = picked.picture
         try:
             self._saver.submit(n, picked.picture)
         except (QueueFull, FileExistsError) as e:
+            del self._inflight_pictures[n]
             self.accounting.failed_one()
             self._journal_event({"type": "failed", "frame": n, "reason": str(e)})
             self._fault(Fault("storage", str(e), "Check the reel drive, wind back, then Resume"))
@@ -375,9 +430,11 @@ class Machine:
     def _is_current(self, token: object) -> bool:
         return self._saver is not None and token is self._reel_token
 
-    def _on_save_done(self, accounting: Accounting, n: int) -> None:
+    def _on_save_done(self, accounting: Accounting, token: object, n: int) -> None:
         with self._event():
             accounting.saved_one()
+            if self._is_current(token):
+                self._last_saved = (n, self._inflight_pictures.pop(n))
 
     def _on_save_error(
         self, accounting: Accounting, token: object, n: int, exc: Exception
@@ -387,6 +444,7 @@ class Machine:
             if not self._is_current(token):
                 self._warn_previous_reel(n, exc)
                 return
+            del self._inflight_pictures[n]
             self._fault(
                 Fault(
                     "storage", f"frame {n}: {exc}", "Check the reel drive, wind back, then Resume"
@@ -415,6 +473,8 @@ class Machine:
 
     def tick(self) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             try:
                 self.link.poll()
             except (ProtocolError, SequenceGapError) as e:
@@ -539,6 +599,43 @@ class Machine:
                     )
                 )
 
+    # ---- pictures for the page --------------------------------------------------------------
+
+    def live_picture(self) -> Picture | None:
+        with self._lock:
+            return self._live
+
+    def last_saved(self) -> tuple[int, Picture] | None:
+        with self._lock:
+            return self._last_saved
+
+    def click_window(self) -> tuple[float | None, list[tuple[int, Picture]]]:
+        """(delay_ms, pictures): the CAL_BEFORE + 1 + CAL_AFTER pictures around the target time
+        of the last click that is at least CAL_SNAPSHOT_AFTER_NS old, with their offset in ms
+        (rounded) from that target, oldest first, and the delay that click was picked with
+        (delay + offset is the delay that would pick each picture). (None, []) before such a
+        click on this reel."""
+        with self._lock:
+            return self._cal_delay_ms, list(self._cal_window)
+
+    def set_delay_ms(self, delay_ms: float) -> None:
+        """Calibration: the delay from switch closure to the sharp picture. Not while recording
+        (frames in flight were picked with the old delay). Recorded in the open reel."""
+        if not (0.0 <= delay_ms <= 500.0):  # also rejects NaN
+            raise ValueError(f"delay must be 0..500 ms, got {delay_ms}")
+        with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                raise RuntimeError("machine is shut down")
+            if self.state == MachineState.RECORDING:
+                raise RuntimeError("cannot change the delay while recording: Stop first")
+            # The reel record first: if it fails, the delay for later clicks stays unchanged.
+            if self.reel is not None:
+                data = self.reel.read_reel_json()
+                data["delay_ms"] = delay_ms
+                self.reel.write_reel_json(data)
+            self.config.delay_ms = delay_ms
+            self._picker.set_delay(round(delay_ms * 1e6))
+
     # ---- internals -------------------------------------------------------------------------
 
     @contextmanager
@@ -579,7 +676,7 @@ class Machine:
     def _open_segment(self) -> None:
         if self.reel is None:
             try:
-                self._create_reel(self._pending_meta or ReelMeta())
+                self._create_reel(self._pending_meta or ReelMeta(film_type=self.config.film_type))
             except OSError as e:
                 self._fault(
                     Fault(
@@ -603,22 +700,21 @@ class Machine:
         name = meta.name or f"{self.config.name} — {self._wall_clock().strftime('%Y-%m-%d %H%M')}"
         reel = ReelFolder.create(self.config.reel_root, name)
         info = self._camera.info()
-        reel.write_reel_json(
-            {
-                "name": reel.name,
-                "machine": self.config.name,
-                "film_type": meta.film_type,
-                "notes": meta.notes,
-                "customer": meta.customer,
-                "job_number": meta.job_number,
-                "created": self._wall_clock().isoformat(timespec="seconds"),
-                "camera": asdict(info),
-                "delay_ms": self.config.delay_ms,
-                "debounce_us": self.config.debounce_us,
-                "sync_box_serial": self.link.serial,
-                "sync_box_fw": self.link.fw_version,
-            }
-        )
+        data = {
+            "name": reel.name,
+            "machine": self.config.name,
+            "film_type": meta.film_type,
+            "notes": meta.notes,
+            "customer": meta.customer,
+            "job_number": meta.job_number,
+            "created": self._wall_clock().isoformat(timespec="seconds"),
+            "camera": asdict(info),
+            "delay_ms": self.config.delay_ms,
+            "debounce_us": self.config.debounce_us,
+            "sync_box_serial": self.link.serial,
+            "sync_box_fw": self.link.fw_version,
+        }
+        reel.write_reel_json(data)
         journal = Journal(reel.journal_path)
         accounting = Accounting()
         token = object()
@@ -628,12 +724,13 @@ class Machine:
             self._clock,
             self.config.save_queue,
             partial(self._on_save_error, accounting, token),
-            partial(self._on_save_done, accounting),
+            partial(self._on_save_done, accounting, token),
             partial(self._on_durability_error, token),
         )
         saver.start()
         self.reel, self._journal, self.accounting, self._saver = reel, journal, accounting, saver
         self._reel_token = token
+        self.reel_film_type = data["film_type"]
         self.segment = 1
         self._next_frame = 1
         self._gate.reset()
@@ -647,12 +744,20 @@ class Machine:
     def _replace_picker(self, reason: str) -> None:
         self._fail_pending_clicks(reason)
         self._picker = self._new_picker()
+        # The pictures around a click not yet snapshotted left with the old buffer.
+        self._cal_pending_target = None
 
     def _detach_reel(self) -> tuple[Saver | None, Accounting, Journal | None]:
         """Under the lock: close the open reel; return its saver, accounting and journal."""
         self._replace_picker("reel closed")
+        self._click_times.clear()
+        self._cal_window = []
+        self._cal_delay_ms = None
+        self._inflight_pictures = {}
+        self._last_saved = None
         saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
+        self.reel_film_type = None
         self._journal = None
         self._saver = None
         self.segment = 0
@@ -728,18 +833,22 @@ class Machine:
                 span = self._click_times[-1] - self._click_times[0]
                 if span > 0:
                     fps = (len(self._click_times) - 1) * 1e9 / span
+            # Between New Reel and the first click no reel is open; the accounting is still the
+            # closed reel's (its drain needs it), so it must not be shown.
+            acc = self.accounting if self.reel is not None else None
             return MachineStatus(
                 state=self.state,
                 reel_name=self.reel.name if self.reel else None,
                 segment=self.segment,
-                frames_saved=self.accounting.saved,
-                frames_failed=self.accounting.failed,
-                frames_pending=self.accounting.pending,
-                clicks=self.accounting.clicks_accepted,
+                frames_saved=acc.saved if acc else 0,
+                frames_failed=acc.failed if acc else 0,
+                frames_pending=acc.pending if acc else 0,
+                clicks=acc.clicks_accepted if acc else 0,
                 bounces=self.bounces,
                 fps=fps,
                 sync_error_ms=self.link.clocksync.error_ms,
                 free_bytes=self._free(),
                 last_fault=self.fault_history[-1] if self.fault_history else None,
                 warnings=tuple(self.warnings[-5:]),
+                reel_film_type=self.reel_film_type,
             )

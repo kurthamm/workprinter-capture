@@ -3,17 +3,42 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
+import getpass
+import ipaddress
+import os
+import signal
 import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
 
+from wpcap.config import (
+    SIM_MIN_FRAMES,
+    ConfigError,
+    hash_password,
+    load_config,
+    new_secret,
+    sample_config,
+)
 from wpcap.machine import MachineConfig, MachineState
 from wpcap.reel import ReelFolder
+from wpcap.service import Service, ServiceError
 from wpcap.sim.camera import is_blurred
 from wpcap.sim.film import SimFilm
 from wpcap.sim.rig import SimRig
+from wpcap.tls import (
+    RENEW_WITHIN,
+    check_server_pair,
+    local_names,
+    make_local_ca,
+    make_server_cert,
+    renew_server_cert,
+    replace_server_cert,
+    server_cert_names,
+    server_cert_not_after,
+)
 
 S = 1_000_000_000
 
@@ -37,6 +62,8 @@ def demo(args: argparse.Namespace) -> int:
             rig.run_for(S)
         seconds_run += 1
         _print_status(rig)
+    # shutdown() leaves SHUT_DOWN, so take the reel's end state first.
+    final_state = rig.machine.status().state
     rig.machine.shutdown()
     st = rig.machine.status()
     reel = rig.machine.reel
@@ -45,12 +72,14 @@ def demo(args: argparse.Namespace) -> int:
         for p in sorted(ReelFolder.open(reel.path).frames_dir.glob("*.png")):
             if is_blurred(np.asarray(Image.open(p))):
                 blurred += 1
-    print(f"final: {st.state} saved {st.frames_saved} failed {st.frames_failed} blurred {blurred}")
+    print(
+        f"final: {final_state} saved {st.frames_saved} failed {st.frames_failed} blurred {blurred}"
+    )
     if reel is not None:
         print(f"reel: {reel.path}")
     for level, title, message in rig.alerts:
         print(f"alert [{level}] {title}: {message}")
-    ok = st.state == MachineState.REEL_FINISHED and st.frames_failed == 0 and blurred == 0
+    ok = final_state == MachineState.REEL_FINISHED and st.frames_failed == 0 and blurred == 0
     return 0 if ok else 1
 
 
@@ -62,6 +91,280 @@ def _print_status(rig: SimRig) -> None:
     )
 
 
+def _read_stdin_password() -> str:
+    """One line from stdin; on a terminal it is read without echo."""
+    if sys.stdin.isatty():
+        return getpass.getpass("Password: ")
+    return sys.stdin.readline().rstrip("\r\n")
+
+
+def cmd_hash_password(args: argparse.Namespace) -> int:
+    # Without --password the password comes from stdin (--password-stdin is the same, spelled
+    # out for scripts). --password lands in the process list and shell history.
+    pw = args.password if args.password is not None else _read_stdin_password()
+    if not pw:
+        print("empty password", file=sys.stderr)
+        return 2
+    print(hash_password(pw))
+    return 0
+
+
+def _ask_password() -> str:
+    while True:
+        a = getpass.getpass("Choose the web page password: ")
+        b = getpass.getpass("Again: ")
+        if a and a == b:
+            return a
+        print("passwords differ or empty; try again", file=sys.stderr)
+
+
+def cmd_init_config(args: argparse.Namespace) -> int:
+    out = Path(args.out)
+    if out.exists():
+        print(f"{out} already exists; remove it first", file=sys.stderr)
+        return 2
+    # Everything is checked before the first file or folder is made.
+    if not 1 <= args.port <= 65535:
+        print(f"--port must be 1 to 65535, not {args.port}", file=sys.stderr)
+        return 2
+    if args.sim_frames < SIM_MIN_FRAMES:
+        print(f"--sim-frames must be at least {SIM_MIN_FRAMES}", file=sys.stderr)
+        return 2
+    try:
+        ipaddress.ip_address(args.bind)
+    except ValueError:
+        print(f"--bind {args.bind!r} is not an IP address", file=sys.stderr)
+        return 2
+    for ip in args.ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            print(f"--ip {ip!r} is not an IP address", file=sys.stderr)
+            return 2
+    # Absolute paths in the config: the service may run from another working directory.
+    certs = Path(args.certs).resolve()
+    if args.password is not None:
+        pw = args.password
+    elif args.password_stdin:
+        pw = _read_stdin_password()
+    else:
+        pw = _ask_password()
+    if not pw:
+        print("empty password", file=sys.stderr)
+        return 2
+    reels = Path(args.reels).resolve()
+    for n in ("WorkPrinter 1", "WorkPrinter 2"):
+        (reels / n).mkdir(parents=True, exist_ok=True)
+    try:
+        ca_crt, ca_key = make_local_ca(certs)
+    except FileExistsError:
+        ca_crt, ca_key = certs / "ca.crt", certs / "ca.key"
+        if not (ca_crt.exists() and ca_key.exists()):
+            print(
+                f"incomplete CA in {certs}; remove ca.crt and ca.key, then run again",
+                file=sys.stderr,
+            )
+            return 2
+    hosts, ips = local_names()
+    hosts += [h for h in args.host if h not in hosts]
+    # serve prints the bind address as the page URL, so the certificate must name it.
+    named_ips = list(args.ip)
+    if not ipaddress.ip_address(args.bind).is_unspecified:
+        named_ips.insert(0, args.bind)
+    ips += [ip for ip in named_ips if ip not in ips]
+    crt, key = certs / "wpcap.crt", certs / "wpcap.key"
+    if not hosts:
+        print("no host names for the certificate", file=sys.stderr)
+        return 2
+    if crt.exists() != key.exists():
+        print(
+            f"{crt} and {key} must both exist; run: wpcap gen-cert --certs {certs} --replace",
+            file=sys.stderr,
+        )
+        return 2
+    if crt.exists():
+        have_dns, have_ips = server_cert_names(crt)
+        missing = [h for h in args.host if h.lower() not in have_dns]
+        missing += [ip for ip in named_ips if str(ipaddress.ip_address(ip)) not in have_ips]
+        if missing:
+            print(
+                f"the existing certificate {crt} lacks {', '.join(missing)}; run: "
+                f"wpcap gen-cert --certs {certs} --replace and the same --host/--ip",
+                file=sys.stderr,
+            )
+            return 2
+    else:
+        make_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
+    text = sample_config(hash_password(pw), reels, crt, key, new_secret())
+    text = text.replace('host = "0.0.0.0"', f'host = "{args.bind}"').replace(
+        "port = 8443", f"port = {args.port}"
+    )
+    text = text.replace("sim_frames = 300", f"sim_frames = {args.sim_frames}")
+    # Exclusive and owner-only from the first byte: the file holds the session secret.
+    try:
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(f"{out} already exists; remove it first", file=sys.stderr)
+        return 2
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"wrote {out}\nCA certificate to trust on your devices: {ca_crt}")
+    return 0
+
+
+def cmd_gen_cert(args: argparse.Namespace) -> int:
+    certs = Path(args.certs)
+    ca_crt, ca_key = certs / "ca.crt", certs / "ca.key"
+    if not ca_crt.exists():
+        print(f"no CA at {ca_crt}; run init-config first", file=sys.stderr)
+        return 2
+    crt, key = certs / "wpcap.crt", certs / "wpcap.key"
+    replacing = crt.exists() or key.exists()
+    if replacing and not args.replace:
+        print(f"{crt} exists; pass --replace to make a new one", file=sys.stderr)
+        return 2
+    hosts, ips = local_names()
+    hosts += [h for h in args.host if h not in hosts]
+    ips += [ip for ip in args.ip if ip not in ips]
+    if not hosts:
+        print("no host names for the certificate", file=sys.stderr)
+        return 2
+    for ip in args.ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            print(f"--ip {ip!r} is not an IP address", file=sys.stderr)
+            return 2
+    if replacing:  # the old pair stays until the new one is written
+        replace_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
+    else:
+        make_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
+    print(f"wrote {crt} for {', '.join(hosts + ips)}")
+    return 0
+
+
+def renew_cert_if_expiring(cert_file: Path, key_file: Path) -> None:
+    """A server certificate expiring within RENEW_WITHIN is renewed from the local CA next to
+    it; without that CA the operator is warned and the service still starts, unless the
+    certificate has already expired (then there is nothing to serve)."""
+    not_after = server_cert_not_after(cert_file)
+    if not_after - dt.datetime.now(dt.UTC) > RENEW_WITHIN:
+        return
+    ca_crt, ca_key = cert_file.parent / "ca.crt", cert_file.parent / "ca.key"
+    if not (ca_crt.exists() and ca_key.exists()):
+        if not_after <= dt.datetime.now(dt.UTC):
+            raise RuntimeError(
+                f"the certificate {cert_file} expired {not_after:%Y-%m-%d %H:%M} UTC and there "
+                f"is no CA ({ca_crt}, {ca_key}) to renew it; make a new one with: "
+                f"wpcap gen-cert --replace --certs {cert_file.parent}"
+            )
+        print(
+            f"warning: the certificate {cert_file} expires {not_after:%Y-%m-%d %H:%M} UTC and "
+            f"there is no CA ({ca_crt}, {ca_key}) to renew it; the page will stop working "
+            f"then. Make a new one with: wpcap gen-cert --replace --certs {cert_file.parent}",
+            file=sys.stderr,
+        )
+        return
+    try:
+        new_after = renew_server_cert(ca_crt, ca_key, cert_file, key_file)
+    except Exception as e:  # noqa: BLE001 - reported; fatal below only if the old one expired
+        if not_after <= dt.datetime.now(dt.UTC):
+            raise
+        print(
+            f"warning: could not renew the certificate {cert_file} ({type(e).__name__}: {e}); "
+            f"keeping it until it expires {not_after:%Y-%m-%d %H:%M} UTC. Make a new one with: "
+            f"wpcap gen-cert --replace --certs {cert_file.parent}",
+            file=sys.stderr,
+        )
+        return
+    print(f"renewed certificate, valid until {new_after:%Y-%m-%d}", flush=True)
+
+
+def stop_signals() -> tuple[signal.Signals, ...]:
+    """The signals uvicorn turns into a graceful shutdown (and re-raises afterwards)."""
+    sigs = (signal.SIGINT, signal.SIGTERM)
+    if hasattr(signal, "SIGBREAK"):  # Windows: Ctrl+Break, the usual "stop" from a supervisor
+        sigs += (signal.SIGBREAK,)
+    return sigs
+
+
+def absorb_reraised_stop_signals() -> None:
+    for sig in stop_signals():
+        signal.signal(sig, lambda signum, frame: None)
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    import uvicorn
+
+    from wpcap.web.app import create_app
+
+    try:
+        config = load_config(Path(args.config))
+    except ConfigError as e:
+        print(f"config error: {e}", file=sys.stderr)
+        return 2
+    for p in (config.server.cert_file, config.server.key_file):
+        if not p.exists():
+            print(f"certificate file not found: {p} (run: wpcap gen-cert)", file=sys.stderr)
+            return 2
+    try:
+        check_server_pair(
+            config.server.cert_file, config.server.key_file, config.server.cert_file.parent
+        )
+    except ValueError as e:
+        print(f"cannot start: {e}", file=sys.stderr)
+        return 2
+    renew_cert_if_expiring(config.server.cert_file, config.server.key_file)
+    service = Service(config)
+    started = False
+    try:
+        try:
+            service.start()
+        except ServiceError as e:
+            print(f"cannot start: {e}", file=sys.stderr)
+            return 2
+        started = True
+        app = create_app(service, config)
+        hosts, ips = local_names()
+        # The server listens on the configured address only; list names that reach it.
+        shown = hosts + ips if config.server.host == "0.0.0.0" else [config.server.host]
+        for name in shown:
+            url_host = f"[{name}]" if ":" in name else name
+            print(f"page: https://{url_host}:{config.server.port}/")
+
+        class Server(uvicorn.Server):
+            def handle_exit(self, sig, frame):
+                # Let open event streams end so graceful shutdown does not wait on them.
+                app.state.shutting_down.set()
+                super().handle_exit(sig, frame)
+
+        server = Server(
+            uvicorn.Config(
+                app,
+                host=config.server.host,
+                port=config.server.port,
+                ssl_certfile=str(config.server.cert_file),
+                ssl_keyfile=str(config.server.key_file),
+                log_level="warning",
+                timeout_graceful_shutdown=5,
+            )
+        )
+        # What happens on Ctrl+C / SIGTERM / Ctrl+Break: server.run() installs uvicorn's own
+        # handlers (a second Ctrl+C forces exit), shuts down gracefully, restores the handlers
+        # that were set before, then re-raises the captured signal. The handlers installed here
+        # only absorb that re-raised signal so it neither raises KeyboardInterrupt nor kills
+        # the process before the service is stopped.
+        absorb_reraised_stop_signals()
+        server.run()
+    finally:
+        # A Ctrl+C during a slow stop must still interrupt it, not be absorbed.
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+        service.stop()
+        if started:
+            print("stopped: machines shut down, reels closed", flush=True)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="wpcap")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -71,11 +374,65 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("--delay-ms", type=float, default=40.0)
     d.add_argument("--switch-offset-ms", type=float, default=0.0)
     d.add_argument("--realtime", action="store_true")
+    hp = sub.add_parser(
+        "hash-password", help="print the scrypt hash of a password (stdin or --password)"
+    )
+    hp_pw = hp.add_mutually_exclusive_group()
+    hp_pw.add_argument(
+        "--password",
+        help="scripts and tests only: visible in the process list and shell history",
+    )
+    hp_pw.add_argument(
+        "--password-stdin", action="store_true", help="read the password from stdin (default)"
+    )
+
+    ic = sub.add_parser(
+        "init-config",
+        help="write a sample config with two simulated machines, a CA and a certificate",
+    )
+    ic.add_argument("--out", required=True)
+    ic.add_argument(
+        "--reels", required=True, help="folder that will hold one subfolder per machine"
+    )
+    ic.add_argument(
+        "--certs", required=True, help="folder for ca.crt, ca.key, wpcap.crt, wpcap.key"
+    )
+    ic_pw = ic.add_mutually_exclusive_group()
+    ic_pw.add_argument(
+        "--password",
+        help="scripts and tests only: visible in the process list and shell history; "
+        "otherwise asked on the terminal",
+    )
+    ic_pw.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="read the password from stdin (recommended for non-interactive use)",
+    )
+    ic.add_argument("--bind", default="0.0.0.0", dest="bind")
+    ic.add_argument(
+        "--host", action="append", default=[], help="extra hostname for the certificate"
+    )
+    ic.add_argument("--ip", action="append", default=[], help="extra IP for the certificate")
+    ic.add_argument("--port", type=int, default=8443)
+    ic.add_argument("--sim-frames", type=int, default=300)
+
+    gc = sub.add_parser("gen-cert", help="make a new server certificate from the existing CA")
+    gc.add_argument("--certs", required=True)
+    gc.add_argument("--host", action="append", default=[])
+    gc.add_argument("--ip", action="append", default=[])
+    gc.add_argument("--replace", action="store_true")
+
+    sv = sub.add_parser("serve", help="run the capture service and the web page")
+    sv.add_argument("--config", required=True)
+
     args = parser.parse_args(argv)
-    if args.command == "demo":
-        return demo(args)
-    parser.error(f"unknown command {args.command}")
-    return 2
+    return {
+        "demo": demo,
+        "hash-password": cmd_hash_password,
+        "init-config": cmd_init_config,
+        "gen-cert": cmd_gen_cert,
+        "serve": cmd_serve,
+    }[args.command](args)
 
 
 if __name__ == "__main__":

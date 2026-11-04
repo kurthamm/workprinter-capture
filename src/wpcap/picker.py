@@ -9,6 +9,10 @@ from dataclasses import dataclass
 from wpcap.camera import Picture
 from wpcap.synclink import ClickEvent
 
+# A calibration window is only meaningful around pictures taken close to the click: farther
+# than this from the target, the pictures show something else (the buffer has moved on).
+WINDOW_MAX_DISTANCE_NS = 200_000_000
+
 
 class RingBuffer:
     def __init__(self, window_ns: int = 1_000_000_000) -> None:
@@ -42,6 +46,18 @@ class RingBuffer:
 
     def is_taken(self, index: int) -> bool:
         return index in self._taken
+
+    def window(self, t_ns: int, before: int, after: int) -> list[Picture]:
+        """The picture nearest t_ns with up to `before` older and `after` newer neighbours,
+        oldest first. Fewer at the edges of the buffer; empty when the buffer is empty or the
+        nearest picture is more than WINDOW_MAX_DISTANCE_NS from t_ns."""
+        if not self._pics:
+            return []
+        pics = list(self._pics)
+        centre = min(range(len(pics)), key=lambda i: abs(pics[i].t_ns - t_ns))
+        if abs(pics[centre].t_ns - t_ns) > WINDOW_MAX_DISTANCE_NS:
+            return []
+        return pics[max(0, centre - before) : centre + after + 1]
 
     def __len__(self) -> int:
         return len(self._pics)
@@ -86,6 +102,7 @@ class FramePicker:
         self._on_failed = on_failed
         self.buffer = RingBuffer(window_ns)
         self._pending: deque[PendingClick] = deque()
+        self.last_target_ns: int | None = None
 
     @property
     def pending_count(self) -> int:
@@ -99,8 +116,12 @@ class FramePicker:
 
     def on_click(self, pending: PendingClick) -> None:
         pending.target_ns = pending.click.t_pc_ns + self.delay_ns
+        self.last_target_ns = pending.target_ns
         self._pending.append(pending)
         self._resolve()
+
+    def set_delay(self, delay_ns: int) -> None:
+        self.delay_ns = delay_ns
 
     def on_picture(self, p: Picture) -> None:
         self.buffer.push(p)

@@ -119,3 +119,28 @@ def test_drain_returns_pending_clicks_in_order_without_callbacks():
     h.send_click(2, 225)
     assert [c.frame_number for c in h.p.drain()] == [1, 2]
     assert h.p.pending_count == 0 and h.picked == [] and h.failed == []
+
+
+def test_window_returns_neighbours_around_nearest_oldest_first():
+    rb = RingBuffer(window_ns=10**9)
+    for i in range(10):
+        rb.push(pic(i, i * 10))
+    w = rb.window(43 * MS, before=2, after=2)  # nearest is index 4
+    assert [p.index for p in w] == [2, 3, 4, 5, 6]
+
+
+def test_window_is_shorter_at_the_edges():
+    rb = RingBuffer(window_ns=10**9)
+    for i in range(4):
+        rb.push(pic(i, i * 10))
+    assert [p.index for p in rb.window(0, before=3, after=1)] == [0, 1]
+    assert [p.index for p in rb.window(30 * MS, before=1, after=3)] == [2, 3]
+    assert RingBuffer().window(0, 1, 1) == []
+
+
+def test_window_is_empty_when_every_picture_is_far_from_the_target():
+    rb = RingBuffer(window_ns=10**9)
+    for i in range(4):
+        rb.push(pic(i, 1000 + i * 10))  # 1000..1030 ms
+    assert rb.window(700 * MS, before=1, after=1) == []  # nearest is 300 ms away
+    assert [p.index for p in rb.window(810 * MS, before=0, after=0)] == [0]  # 190 ms away
