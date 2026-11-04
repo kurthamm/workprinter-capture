@@ -13,7 +13,7 @@ button.danger { background:var(--red); color:#fff; }
 .hidden { display:none !important; }
 .login { padding:2rem; } .login label { display:block; margin-bottom:1rem; } input, select { font:inherit; padding:.4rem; }
 .error { color:var(--red); min-height:1.2em; }
-main { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:1rem; padding:1rem; }
+main { display:grid; grid-template-columns:repeat(auto-fit, minmax(min(340px, 100%), 1fr)); gap:1rem; padding:1rem; }
 .card { background:var(--card); border-radius:10px; padding:1rem; border:3px solid var(--grey); }
 .card[data-state="ready"] { border-color:var(--green); }
 .card[data-state="recording"] { border-color:var(--green); animation: pulse 1.2s infinite; }

@@ -11,6 +11,11 @@ let lastConnectAt = 0;
 const lastState = new Map(); // machine name -> {reel, saved, url, inflight} for the last-saved picture
 const silencedFaults = new Set(); // "machine|message" keys the operator has silenced
 let activeFaults = new Set(); // keys of faults present in the latest status
+// Problem alerts reach the page before the status that carries their fault key. Machines with
+// such an alert not yet followed by a status; Silence in that gap is applied to the next status.
+const alertedMachines = new Set();
+const pendingSilence = new Set();
+let lastAlertId = null; // highest numeric alert id shown; null until the first connect
 
 // ---- API ------------------------------------------------------------------------------------
 
@@ -79,7 +84,10 @@ function connect() {
     const d = JSON.parse(e.data);
     $("#alerts").innerHTML = "";
     seenAlertIds = new Set();
+    const since = lastAlertId; // null on the first load: old alerts are history, not news
     d.alerts.forEach(showAlert);
+    // Reconnecting: what happened while the stream was down still gets its chime or alarm.
+    if (since !== null) d.alerts.filter((a) => a.id > since).forEach(react);
   });
   events.addEventListener("status", (e) => { lastStatusAt = Date.now(); connectedOnce = true; render(JSON.parse(e.data)); });
   events.addEventListener("alert", (e) => { const a = JSON.parse(e.data); showAlert(a); react(a); });
@@ -234,6 +242,9 @@ function render(snap) {
     $(".cal-reason", el).textContent = state === "recording" ? "Stop first: the delay cannot change while recording" : "";
   }
   activeFaults = faults;
+  for (const k of faults) if (pendingSilence.has(k.split("|")[0])) silencedFaults.add(k);
+  pendingSilence.clear();
+  alertedMachines.clear();
   for (const k of faults) if (!silencedFaults.has(k)) startAlarm();
   const pc = snap.pc;
   $("#pc").textContent = `PC: CPU ${pc.cpu_percent}% · memory ${pc.memory_percent}% · temperature ${pc.temperature_c === null ? "n/a" : pc.temperature_c.toFixed(0) + " °C"} · updated ${new Date(snap.t * 1000).toLocaleTimeString()}`;
@@ -246,6 +257,7 @@ function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c) => ({"&": "&am
 function showAlert(a) {
   if (seenAlertIds.has(a.id)) return;
   seenAlertIds.add(a.id);
+  if (typeof a.id === "number" && (lastAlertId === null || a.id > lastAlertId)) lastAlertId = a.id;
   const li = document.createElement("li");
   li.className = a.level;
   li.innerHTML = `<b>${escapeHtml(a.title)}</b> <span class="muted">${escapeHtml(a.machine)} · ${new Date(a.t * 1000).toLocaleTimeString()}</span><br>${escapeHtml(a.message)}`;
@@ -253,7 +265,7 @@ function showAlert(a) {
 }
 
 function react(a) {
-  if (a.level === "problem") { startAlarm(); notify(a); }
+  if (a.level === "problem") { alertedMachines.add(a.machine); startAlarm(); notify(a); }
   else if (a.level === "info" && a.title.startsWith("Reel finished")) { chime(); notify(a); }
 }
 
@@ -281,6 +293,8 @@ function startAlarm() {
 
 function stopAlarm() {
   for (const k of activeFaults) silencedFaults.add(k);
+  for (const m of alertedMachines) pendingSilence.add(m);
+  alertedMachines.clear();
   if (alarm) clearInterval(alarm);
   alarm = null;
   document.body.classList.remove("alarm");

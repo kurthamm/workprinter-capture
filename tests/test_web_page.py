@@ -74,3 +74,14 @@ def test_javascript_parses():
         ["node", "--check", str(STATIC / "app.js")], capture_output=True, text=True, timeout=30
     )
     assert r.returncode == 0, r.stderr
+
+
+def test_page_chimes_for_alerts_missed_while_disconnected_and_silences_before_the_next_status():
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "d.alerts.filter((a) => a.id > since).forEach(react)" in js
+    assert "pendingSilence" in js and "alertedMachines.add(a.machine)" in js
+
+
+def test_machine_grid_column_never_exceeds_the_screen():
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert "minmax(min(340px, 100%), 1fr)" in css
