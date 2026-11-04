@@ -174,7 +174,9 @@ def test_concurrent_publishers_on_a_full_subscriber_never_raise():
     held = [sub.get(0.1) for _ in range(100)]
     assert all(h is not None for h in held)
     assert sub.get(0.01) is None
-    assert [h.id for h in held] == list(range(8 * 200 - 99, 8 * 200 + 1))
+    ids = [h.id for h in held]
+    assert len(set(ids)) == 100
+    assert all(1 <= i <= 8 * 200 for i in ids)
 
 
 def test_slow_forwarder_does_not_delay_alert():

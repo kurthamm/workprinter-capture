@@ -211,7 +211,10 @@ class AlertBus:
             t = self._fthread
         if t is None:
             return
-        self._fq.put(None, timeout=timeout_s)
+        try:
+            self._fq.put(None, timeout=timeout_s)
+        except queue.Full as e:
+            raise TimeoutError("alert forwarder did not accept the stop sentinel") from e
         t.join(timeout_s)
         if t.is_alive():
             raise TimeoutError("alert forwarder did not stop")
