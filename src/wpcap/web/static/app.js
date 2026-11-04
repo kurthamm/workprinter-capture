@@ -6,6 +6,7 @@ let events = null;
 let lastStatusAt = 0;
 let alarm = null;
 let seenAlertIds = new Set();
+let reactedAlertIds = new Set(); // a hello and a queued alert event can carry the same alert
 let connectedOnce = false; // a status has arrived since the last login
 let lastConnectAt = 0;
 const lastState = new Map(); // machine name -> {reel, saved, url, inflight} for the last-saved picture
@@ -58,6 +59,11 @@ function showLogin(on) {
   $("#logout").classList.toggle("hidden", on);
   if (on && events) { events.close(); events = null; }
   if (on) connectedOnce = false;
+  if (on) { // nothing from the logged-in view stays readable at the login box
+    $("#alerts").innerHTML = "";
+    seenAlertIds = new Set();
+    $("#pc").textContent = "";
+  }
   if (on) $("#password").focus();
 }
 
@@ -84,6 +90,7 @@ function connect() {
     const d = JSON.parse(e.data);
     $("#alerts").innerHTML = "";
     seenAlertIds = new Set();
+    reactedAlertIds = new Set();
     const since = lastAlertId; // null on the first load: old alerts are history, not news
     d.alerts.forEach(showAlert);
     // Reconnecting: what happened while the stream was down still gets its chime or alarm.
@@ -265,6 +272,8 @@ function showAlert(a) {
 }
 
 function react(a) {
+  if (reactedAlertIds.has(a.id)) return;
+  reactedAlertIds.add(a.id);
   if (a.level === "problem") { alertedMachines.add(a.machine); startAlarm(); notify(a); }
   else if (a.level === "info" && a.title.startsWith("Reel finished")) { chime(); notify(a); }
 }
@@ -341,11 +350,18 @@ async function calibrate(name, el) {
       const cap = document.createElement("figcaption");
       cap.textContent = `${p.offset_ms >= 0 ? "+" : ""}${p.offset_ms} ms`;
       fig.append(img, cap);
-      fig.addEventListener("click", async () => {
+      const choose = async () => {
         const next = Math.round((cal.delay_ms + p.offset_ms) * 10) / 10;
         if (!confirm(`Set the delay for ${name} to ${next} ms?`)) return;
         try { await api(`${path}/delay`, {delay_ms: next}); box.classList.add("hidden"); }
         catch (err) { $(".error", box).textContent = err.message; }
+      };
+      fig.tabIndex = 0;
+      fig.setAttribute("role", "button");
+      fig.setAttribute("aria-label", `Set the delay ${cap.textContent} from now`);
+      fig.addEventListener("click", choose);
+      fig.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); choose(); }
       });
       strip.appendChild(fig);
     }

@@ -26,3 +26,8 @@ def test_non_ascii_or_malformed_token_is_rejected():
 def test_overlong_stamp_is_rejected_not_an_error():
     assert check_token("s" * 64, "9" * 5000 + ".abc", 60) is False
     assert check_token("s" * 64, "1" * 21 + ".abc", 60) is False
+
+
+def test_token_stamped_in_the_future_is_rejected():
+    t = make_token("s" * 64, issued=time.time() + 3600)
+    assert not check_token("s" * 64, t, max_age_s=10**9)

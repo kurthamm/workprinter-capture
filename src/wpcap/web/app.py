@@ -66,9 +66,12 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
 
     # ---- auth ------------------------------------------------------------------------------
 
-    def require_login(request: Request) -> None:
+    def session_ok(request: Request) -> bool:
         token = request.cookies.get(COOKIE)
-        if token is None or not check_token(secret, token, SESSION_DAYS * 86400):
+        return token is not None and check_token(secret, token, SESSION_DAYS * 86400)
+
+    def require_login(request: Request) -> None:
+        if not session_ok(request):
             raise HTTPException(401, "login required")
 
     @app.exception_handler(StarletteHTTPException)
@@ -137,7 +140,12 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
                 hello = {"alerts": [a.as_dict() for a in service.bus.recent(50)]}
                 yield f"event: hello\ndata: {json.dumps(hello)}\n\n"
                 next_status = 0.0
-                while not app.state.shutting_down.is_set() and not await request.is_disconnected():
+                # The session is re-checked every pass: a stream must not outlive its 30 days.
+                while (
+                    not app.state.shutting_down.is_set()
+                    and not await request.is_disconnected()
+                    and session_ok(request)
+                ):
                     now = time.monotonic()
                     if now >= next_status:
                         next_status = now + STATUS_PERIOD_S

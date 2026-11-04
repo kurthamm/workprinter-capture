@@ -29,4 +29,6 @@ def check_token(secret: str, token: str, max_age_s: float) -> bool:
     expected = hmac.new(secret.encode(), stamp.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         return False
-    return time.time() - issued <= max_age_s
+    age = time.time() - issued
+    # Negative: stamped in the future (the clock moved back); not a token this server issued.
+    return 0 <= age <= max_age_s

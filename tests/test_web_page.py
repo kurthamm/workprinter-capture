@@ -85,3 +85,18 @@ def test_page_chimes_for_alerts_missed_while_disconnected_and_silences_before_th
 def test_machine_grid_column_never_exceeds_the_screen():
     css = (STATIC / "style.css").read_text(encoding="utf-8")
     assert "minmax(min(340px, 100%), 1fr)" in css
+
+
+def test_calibration_pictures_are_keyboard_operable_and_header_wraps():
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert "fig.tabIndex = 0" in js and 'setAttribute("role", "button")' in js
+    assert '"Enter"' in js and '" "' in js
+    css = (STATIC / "style.css").read_text(encoding="utf-8")
+    assert ".header-buttons { display:flex; flex-wrap:wrap;" in css
+    assert "header, footer { display:flex; flex-wrap:wrap;" in css
+
+
+def test_page_clears_alerts_and_pc_line_at_the_login_screen_and_reacts_once_per_alert():
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert '$("#alerts").innerHTML = ""' in js and '$("#pc").textContent = ""' in js
+    assert "reactedAlertIds.has(a.id)" in js
