@@ -53,7 +53,8 @@ class SimRig:
 
     def load_film(self, film: SimFilm) -> None:
         """Thread new film: the camera renders it and the switch follows its timing. Call only
-        between reels (the machine must not be recording)."""
+        between reels (the machine must not be recording).
+        Call from the thread that steps the rig."""
         self.camera.load_film(film)
         self.switch_times = film.switch_times()
         self._next_switch = 0

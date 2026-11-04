@@ -1,6 +1,8 @@
 import time
 from pathlib import Path
 
+import pytest
+
 from wpcap.alerts import AlertBus
 from wpcap.config import MachineSpec
 from wpcap.machine import MachineState
@@ -73,3 +75,41 @@ def test_restart_film_lets_the_demo_scan_again(tmp_path):
     assert wait_for(lambda: r.machine.status().state == MachineState.RECORDING, 10)
     assert r.machine.reel.path != first
     r.stop()
+
+
+def test_stop_twice_leaves_machine_shut_down(tmp_path):
+    r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
+    r.start()
+    r.stop()
+    r.stop()
+    assert r.machine.status().state == MachineState.SHUT_DOWN
+
+
+def test_stop_after_crash_shuts_machine_down(tmp_path, monkeypatch):
+    r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
+
+    def boom(*a, **k):
+        raise RuntimeError("simulated crash")
+
+    monkeypatch.setattr(r.rig, "run_realtime", boom)
+    r.start()
+    assert wait_for(lambda: not r.alive, 5)
+    r.stop()
+    r.stop()
+    assert r.machine.status().state == MachineState.SHUT_DOWN
+
+
+def test_start_twice_raises(tmp_path):
+    r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
+    r.start()
+    try:
+        with pytest.raises(RuntimeError, match="already started"):
+            r.start()
+    finally:
+        r.stop()
+
+
+def test_restart_film_on_a_dead_runner_raises(tmp_path):
+    r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
+    with pytest.raises(RuntimeError, match="not running"):
+        r.restart_film()

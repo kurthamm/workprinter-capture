@@ -49,6 +49,8 @@ class SimRunner:
         self._thread = threading.Thread(target=self._run, name=f"runner {spec.name}", daemon=True)
         self._error: str | None = None
         self._started = False
+        self._pending_lock = threading.Lock()
+        self._pending_film: SimFilm | None = None
 
     def _film(self, now_ns: int) -> SimFilm:
         return SimFilm(frames=self.spec.sim_frames, start_ns=now_ns + 3 * S)
@@ -62,6 +64,10 @@ class SimRunner:
     def _run(self) -> None:
         try:
             while not self._stop.is_set():
+                with self._pending_lock:
+                    film, self._pending_film = self._pending_film, None
+                if film is not None:
+                    self.rig.load_film(film)
                 self.rig.run_realtime(0.25)
         except Exception as e:  # noqa: BLE001 - reported, never hidden
             self._error = f"{e}\n{traceback.format_exc()}"
@@ -79,9 +85,14 @@ class SimRunner:
             self.machine.shutdown()
 
     def restart_film(self) -> None:
-        """Demo Mode: thread a fresh simulated reel. Only between reels."""
-        with self.machine._lock:  # the rig's thread steps under this lock too
-            self.rig.load_film(self._film(self.rig.clock.now_ns()))
+        """Demo Mode: thread a fresh simulated reel. Only between reels. The runner thread
+        applies it at the top of its next loop (within 0.25 s), so only that thread touches the
+        rig."""
+        if not self.alive:
+            raise RuntimeError("runner is not running")
+        film = self._film(self.rig.clock.now_ns())
+        with self._pending_lock:
+            self._pending_film = film
 
     @property
     def alive(self) -> bool:

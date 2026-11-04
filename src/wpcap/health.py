@@ -14,7 +14,7 @@ def cpu_temperature_c() -> float | None:
     readings = [
         e.current
         for name, entries in temps.items()
-        if name in ("coretemp", "k10temp", "cpu_thermal", "acpitz", "zenpower")
+        if name in ("coretemp", "k10temp", "cpu_thermal", "zenpower")
         for e in entries
         if e.current is not None and 0.0 < e.current < 150.0
     ]
