@@ -1,0 +1,341 @@
+import os
+import stat
+import time
+
+import numpy as np
+import pytest
+from PIL import Image
+
+from wpcap.camera import Picture
+from wpcap.clock import SystemClock
+from wpcap.reel import Journal, ReelFolder
+from wpcap.saver import Accounting, AccountingError, QueueFull, Saver
+
+
+def pic(i: int, level: int = 100) -> Picture:
+    return Picture(i, i * 1_000_000, np.full((16, 24, 3), level, dtype=np.uint8))
+
+
+def make(tmp_path, queue_size=120):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+    errors = []
+    saved = []
+    durability = []
+    s = Saver(
+        folder, journal, SystemClock(), queue_size,
+        lambda n, e: errors.append((n, e)), saved.append,
+        lambda n, e: durability.append((n, e)),
+    )
+    s.durability = durability
+    return folder, journal, s, errors, saved
+
+
+def test_saves_png_then_journals(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.start()
+    s.submit(1, pic(10, 77))
+    s.join(5)
+    s.stop()
+    assert errors == [] and saved == [1]
+    assert folder.frame_path(1).read_bytes().endswith(b"IEND\xaeB`\x82")
+    img = np.asarray(Image.open(folder.frame_path(1)))
+    assert img.shape == (16, 24, 3) and img.min() == 77 and img.max() == 77
+    assert not list(folder.frames_dir.glob("*.tmp"))
+    ev = journal.read_all()
+    assert ev[-1]["type"] == "saved" and ev[-1]["frame"] == 1 and ev[-1]["picture_index"] == 10
+    assert s.saved == 1 and s.pending == 0
+
+
+def test_queue_full_raises_immediately(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path, queue_size=2)
+    # not started: nothing drains
+    s.submit(1, pic(1))
+    s.submit(2, pic(2))
+    with pytest.raises(QueueFull):
+        s.submit(3, pic(3))
+
+
+def test_never_overwrites_existing_frame(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    folder.frame_path(1).write_bytes(b"existing")
+    s.start()
+    with pytest.raises(FileExistsError):
+        s.submit(1, pic(1))
+    s.stop()
+    assert folder.frame_path(1).read_bytes() == b"existing"
+
+
+@pytest.mark.skipif(
+    not hasattr(os, "geteuid") or os.geteuid() == 0,
+    reason="needs POSIX directory permissions as a non-root user",
+)
+def test_write_error_is_fault_not_half_frame(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    os.chmod(folder.frames_dir, stat.S_IRUSR | stat.S_IXUSR)  # read-only: next write fails
+    try:
+        s.submit(2, pic(2))
+        s.join(5)
+    finally:
+        os.chmod(folder.frames_dir, stat.S_IRWXU)
+    s.stop()
+    assert len(errors) == 1 and errors[0][0] == 2
+    assert not folder.frame_path(2).exists()
+    assert not list(folder.frames_dir.glob("*.tmp"))
+    ev = journal.read_all()
+    assert ev[-1]["type"] == "failed" and ev[-1]["frame"] == 2 and "write error" in ev[-1]["reason"]
+    assert s.errors == 1 and s.saved == 1
+
+
+def test_accounting_balances():
+    a = Accounting()
+    a.click()
+    a.click()
+    a.click()
+    assert a.pending == 3 and a.balanced()
+    a.saved_one()
+    a.failed_one()
+    assert (a.saved, a.failed, a.pending) == (1, 1, 1) and a.balanced()
+    a.saved = 5
+    assert not a.balanced()
+    with pytest.raises(AccountingError):
+        a.assert_balanced()
+
+
+def wait_dead(s, timeout=5):
+    deadline = time.monotonic() + timeout
+    while s.alive:
+        assert time.monotonic() < deadline, "saver thread did not die"
+        time.sleep(0.005)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_on_saved_failure_is_not_a_write_failure(tmp_path):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+    errors = []
+
+    def boom(n):
+        raise RuntimeError("callback broke")
+
+    s = Saver(
+        folder, journal, SystemClock(), 10, lambda n, e: errors.append(n), boom,
+        lambda n, e: None,
+    )
+    s.start()
+    s.submit(1, pic(1))
+    wait_dead(s)
+    s.stop()
+    assert errors == [] and s.errors == 0 and s.saved == 1
+    assert folder.frame_path(1).exists()
+    assert [e["type"] for e in journal.read_all()] == ["saved"]
+
+
+def test_queue_full_does_not_leak_pending(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path, queue_size=2)
+    s.submit(1, pic(1))
+    s.submit(2, pic(2))
+    with pytest.raises(QueueFull):
+        s.submit(3, pic(3))
+    assert s.pending == 2
+    s.start()
+    s.join(5)
+    s.submit(3, pic(3))  # the failed submit left no in-flight mark behind
+    s.join(5)
+    s.stop()
+    assert s.saved == 3 and s.pending == 0
+
+
+def test_duplicate_in_flight_submit_raises(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.submit(1, pic(1))  # not started: stays queued
+    with pytest.raises(FileExistsError):
+        s.submit(1, pic(1))
+    assert s.pending == 1
+
+
+def test_file_appearing_before_write_is_not_overwritten(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.submit(1, pic(1))
+    folder.frame_path(1).write_bytes(b"someone else's")
+    s.start()
+    s.join(5)
+    s.stop()
+    assert folder.frame_path(1).read_bytes() == b"someone else's"
+    assert not list(folder.frames_dir.glob("*.tmp"))
+    assert len(errors) == 1 and errors[0][0] == 1 and saved == []
+    ev = journal.read_all()
+    assert ev[-1]["type"] == "failed" and "already exists" in ev[-1]["reason"]
+    assert s.errors == 1 and s.saved == 0
+
+
+def test_stop_without_running_thread_returns(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.stop()  # never started
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_stop_after_worker_died_does_not_block(tmp_path):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+
+    def boom(n):
+        raise RuntimeError("callback broke")
+
+    s = Saver(folder, journal, SystemClock(), 1, lambda n, e: None, boom, lambda n, e: None)
+    s.start()
+    s.submit(1, pic(1))
+    wait_dead(s)
+    s.submit(2, pic(2))  # fills the queue; nobody will drain it
+    s.stop()
+    assert not s.alive
+
+
+def test_failure_after_temp_file_written_removes_it(tmp_path, monkeypatch):
+    # Review focus 4: the PNG reaches the temp file, then the rename fails (disk full at
+    # the directory update, drive pulled). No half frame may stay behind or be renamed in.
+    import pathlib
+
+    folder, journal, s, errors, saved = make(tmp_path)
+    real_replace = pathlib.Path.replace
+    seen_tmp = []
+
+    def failing_replace(self, target):
+        if self.name.endswith(".png.tmp"):
+            seen_tmp.append(self.exists())
+            raise OSError(28, "No space left on device")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(pathlib.Path, "replace", failing_replace)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert seen_tmp == [True]  # the temp file really was written before the failure
+    assert not folder.frame_path(1).exists()
+    assert not list(folder.frames_dir.glob("*.tmp"))
+    assert len(errors) == 1 and errors[0][0] == 1
+    ev = journal.read_all()
+    assert ev[-1]["type"] == "failed" and ev[-1]["frame"] == 1 and "write error" in ev[-1]["reason"]
+
+
+def test_write_error_with_unwritable_journal_still_reports(tmp_path, monkeypatch):
+    import pathlib
+
+    folder, journal, s, errors, saved = make(tmp_path)
+    journal.path.mkdir()  # the journal cannot be appended to
+
+    def failing_replace(self, target):
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(pathlib.Path, "replace", failing_replace)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)  # the worker must survive to report it
+    assert s.alive
+    s.stop()
+    assert len(errors) == 1 and errors[0][0] == 1
+    assert "journal" in str(errors[0][1]) and "Input/output error" in str(errors[0][1])
+    assert s.errors == 1 and s.pending == 0
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_saved_line_unwritable_books_frame_saved_then_ends_worker(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    journal.path.mkdir()
+    s.start()
+    s.submit(1, pic(1))
+    wait_dead(s)
+    assert folder.frame_path(1).exists()
+    assert saved == [1] and errors == [] and s.saved == 1 and s.pending == 0
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_finish_returns_frames_a_dead_worker_never_wrote(tmp_path):
+    folder = ReelFolder.create(tmp_path, "Reel")
+    journal = Journal(folder.journal_path)
+
+    def boom(n):
+        raise RuntimeError("callback broke")
+
+    s = Saver(folder, journal, SystemClock(), 10, lambda n, e: None, boom, lambda n, e: None)
+    s.submit(1, pic(1))
+    s.submit(2, pic(2))
+    s.submit(3, pic(3))
+    s.start()
+    wait_dead(s)
+    assert s.finish(5) == [2, 3]
+    assert s.pending == 0 and s.saved == 1 and s.errors == 2
+    assert not folder.frame_path(2).exists()
+
+
+def test_finish_waits_for_queued_frames(tmp_path):
+    folder, journal, s, errors, saved = make(tmp_path)
+    for n in range(1, 6):
+        s.submit(n, pic(n))
+    s.start()
+    assert s.finish(5) == []
+    assert saved == [1, 2, 3, 4, 5] and not s.alive
+
+
+def test_directory_sync_failure_is_a_warning_not_a_failed_write(tmp_path, monkeypatch):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert folder.frame_path(1).exists()
+    assert errors == [] and saved == [1] and s.errors == 0 and s.saved == 1
+    ev = journal.read_all()
+    assert [e["type"] for e in ev] == ["warning", "saved"]
+    assert ev[0]["frame"] == 1
+    assert ev[0]["text"] == "directory sync failed after rename: sync boom"
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_directory_sync_failure_is_reported_even_when_the_journal_is_unwritable(
+    tmp_path, monkeypatch
+):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    folder, journal, s, errors, saved = make(tmp_path)
+    journal.path.mkdir()  # the journal cannot be appended to
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert [n for n, _ in s.durability] == [1]
+    assert str(s.durability[0][1]) == "sync boom"
+    assert saved == [1] and s.saved == 1
+    assert not s.alive
+
+
+def test_directory_sync_failure_reaches_the_durability_callback_once(tmp_path, monkeypatch):
+    import wpcap.saver as saver_mod
+
+    def failing_sync(directory):
+        raise OSError("sync boom")
+
+    monkeypatch.setattr(saver_mod, "_fsync_dir", failing_sync)
+    folder, journal, s, errors, saved = make(tmp_path)
+    s.start()
+    s.submit(1, pic(1))
+    s.join(5)
+    s.stop()
+    assert [n for n, _ in s.durability] == [1]
+    assert str(s.durability[0][1]) == "sync boom"
+    assert saved == [1] and s.saved == 1 and s.errors == 0 and errors == []
+    assert folder.frame_path(1).exists()
