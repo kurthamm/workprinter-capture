@@ -8,6 +8,7 @@ from wpcap.protocol import (
     SequenceChecker,
     SequenceGapError,
     TimeReply,
+    _ints,
     cmd_identify,
     cmd_set_debounce,
     cmd_time_request,
@@ -139,3 +140,13 @@ def test_out_of_range_numbers_are_protocol_errors(body):
 def test_encode_rejects_hello_text_the_wire_cannot_carry(fw, serial):
     with pytest.raises(ValueError):
         encode_message(Hello(seq=1, t_us=5, fw_version=fw, serial=serial))
+
+
+@pytest.mark.parametrize("bad", [b"+5", b"1_0", b" 7", b"7 ", b"0x1f", b"", b"1.0"])
+def test_ints_rejects_anything_but_plain_digits(bad):
+    with pytest.raises(ProtocolError):
+        _ints([bad], b"C " + bad)
+
+
+def test_ints_accepts_plain_and_negative_digits():
+    assert _ints([b"42", b"-7", b"0"], b"x") == [42, -7, 0]

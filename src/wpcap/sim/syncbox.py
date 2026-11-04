@@ -18,7 +18,7 @@ from wpcap.protocol import (
     is_wire_text,
     parse_command,
 )
-from wpcap.sim.transport import Transport
+from wpcap.transport import Transport
 
 
 class SimSyncBox:

@@ -3,17 +3,10 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Protocol
 
+from wpcap.transport import Transport
 
-class Transport(Protocol):
-    def read_line(self) -> bytes | None:
-        """Return one complete line (with its trailing newline) or None if none is complete."""
-        ...
-
-    def write(self, data: bytes) -> None: ...
-
-    def close(self) -> None: ...
+__all__ = ["SimTransport", "Transport", "sim_transport_pair"]
 
 
 class SimTransport:

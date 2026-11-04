@@ -19,7 +19,7 @@ from wpcap.protocol import (
     cmd_time_request,
     decode_line,
 )
-from wpcap.sim.transport import Transport
+from wpcap.transport import Transport
 
 
 class SyncBoxSilent(Exception):

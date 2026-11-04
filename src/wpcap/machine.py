@@ -31,6 +31,7 @@ class MachineState(StrEnum):
     RECORDING = "recording"
     REEL_FINISHED = "reel_finished"
     STOPPED = "stopped"
+    SHUT_DOWN = "shut_down"
 
 
 FAULT_KINDS = {"camera", "missed_frame", "storage", "sync", "sync_box", "operator", "accounting"}
@@ -197,6 +198,8 @@ class Machine:
             accounting, journal = self.accounting, self._journal
         # The saver's callbacks take the machine lock, so drain it with the lock released.
         self._drain_saver(saver, accounting, journal)
+        with self._lock:
+            self.state = MachineState.SHUT_DOWN
 
     # ---- operator actions ------------------------------------------------------------------
 
@@ -204,6 +207,8 @@ class Machine:
         if meta.name is not None:
             ReelFolder.check_name(meta.name)
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                raise RuntimeError("machine is shut down")
             allowed = (
                 MachineState.NOT_READY,
                 MachineState.READY,
@@ -223,6 +228,8 @@ class Machine:
 
     def resume(self) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                raise RuntimeError("machine is shut down")
             if self.state != MachineState.STOPPED:
                 raise RuntimeError(f"resume only from stopped, not {self.state}")
             if self.reel is None:
@@ -237,6 +244,8 @@ class Machine:
 
     def on_picture(self, p: Picture) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             self._pictures_seen += 1
             self._last_picture_ns = p.t_ns
             self._last_shape = p.shape
@@ -255,17 +264,23 @@ class Machine:
 
     def on_bounce(self, seq: int, t_us: int) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             self.bounces += 1
             self._journal_event({"type": "bounce", "seq": seq, "t_box_us": t_us})
 
     def on_unsynced_click(self, seq: int) -> None:
         """A closure arrived before the clocks are in sync: the film is moving too early."""
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             self._journal_event({"type": "ignored_click", "seq": seq, "state": "unsynced"})
             self._warn_not_ready()
 
     def on_click(self, ev: ClickEvent) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             if self.state == MachineState.READY:
                 self._open_segment()
             if self.state != MachineState.RECORDING:
@@ -415,6 +430,8 @@ class Machine:
 
     def tick(self) -> None:
         with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                return
             try:
                 self.link.poll()
             except (ProtocolError, SequenceGapError) as e:

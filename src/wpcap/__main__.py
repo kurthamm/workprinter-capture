@@ -37,6 +37,8 @@ def demo(args: argparse.Namespace) -> int:
             rig.run_for(S)
         seconds_run += 1
         _print_status(rig)
+    # shutdown() leaves SHUT_DOWN, so take the reel's end state first.
+    final_state = rig.machine.status().state
     rig.machine.shutdown()
     st = rig.machine.status()
     reel = rig.machine.reel
@@ -45,12 +47,15 @@ def demo(args: argparse.Namespace) -> int:
         for p in sorted(ReelFolder.open(reel.path).frames_dir.glob("*.png")):
             if is_blurred(np.asarray(Image.open(p))):
                 blurred += 1
-    print(f"final: {st.state} saved {st.frames_saved} failed {st.frames_failed} blurred {blurred}")
+    print(
+        f"final: {final_state} saved {st.frames_saved} "
+        f"failed {st.frames_failed} blurred {blurred}"
+    )
     if reel is not None:
         print(f"reel: {reel.path}")
     for level, title, message in rig.alerts:
         print(f"alert [{level}] {title}: {message}")
-    ok = st.state == MachineState.REEL_FINISHED and st.frames_failed == 0 and blurred == 0
+    ok = final_state == MachineState.REEL_FINISHED and st.frames_failed == 0 and blurred == 0
     return 0 if ok else 1
 
 
