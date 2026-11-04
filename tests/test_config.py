@@ -198,3 +198,9 @@ def test_sample_config_needs_absolute_paths(tmp_path):
         sample_config(
             hash_password("pw"), Path("reels"), tmp_path / "c", tmp_path / "k", new_secret()
         )
+
+
+def test_sim_frames_below_what_the_gate_needs_rejected(tmp_path):
+    text = good(tmp_path).replace("sim_frames = 120", "sim_frames = 19", 1)
+    with pytest.raises(ConfigError, match="sim_frames must be at least 20"):
+        load_config(write(tmp_path, text))

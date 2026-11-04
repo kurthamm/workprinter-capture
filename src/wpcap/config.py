@@ -15,6 +15,7 @@ from wpcap.reel import ReelFolder
 FILM_TYPES = ("super8", "regular8")
 MACHINE_KINDS = ("sim",)  # plans 3 and 4 add "serial"
 _SERVER_KEYS = {"host", "port", "password_hash", "secret", "cert_file", "key_file"}
+SIM_MIN_FRAMES = 20
 _MACHINE_KEYS = {"name", "kind", "reel_root", "delay_ms", "debounce_us", "film_type", "sim_frames"}
 _NTFY_KEYS = {"url", "topic"}
 
@@ -198,8 +199,9 @@ def _machine(i: int, m: object) -> MachineSpec:
     if not 1000 <= debounce_us <= 100_000:
         raise ConfigError(f"{where}.debounce_us must be 1000..100000")
     sim_frames = _typed(m, where, "sim_frames", int)
-    if sim_frames < 1:
-        raise ConfigError(f"{where}.sim_frames must be at least 1")
+    if sim_frames < SIM_MIN_FRAMES:
+        # Below this the gate never sees enough picture frames to detect the end of the film.
+        raise ConfigError(f"{where}.sim_frames must be at least {SIM_MIN_FRAMES}")
     # Relative would resolve against the working directory, which for a Windows service is
     # C:\Windows\System32: reels on the wrong disk.
     reel_root = Path(_nonempty(m, where, "reel_root"))
