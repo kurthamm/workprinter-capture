@@ -174,7 +174,7 @@ def test_calibration_and_delay(client, svc, film_frames):
     m = svc.machine("WorkPrinter 1")
     assert wait_for(lambda: m.last_saved() is not None, 15)
     cal_url = "/api/machines/WorkPrinter 1/calibration"
-    # the window around the latest click fills as the pictures after it arrive
+    # the strip around a click is taken once the click is 60 ms old
     got: list[dict] = []
 
     def full_window() -> bool:
@@ -191,6 +191,9 @@ def test_calibration_and_delay(client, svc, film_frames):
     r = client.post("/api/machines/WorkPrinter 1/delay", json={"delay_ms": 55.0})
     assert r.status_code == 409  # recording
     client.post("/api/machines/WorkPrinter 1/stop")
+    time.sleep(1.5)  # the camera streams on past the ring buffer's one second
+    after_stop = client.get(cal_url).json()["pictures"]
+    assert len(after_stop) == 7 and all(abs(p["offset_ms"]) <= 60 for p in after_stop)
     assert (
         client.post("/api/machines/WorkPrinter 1/delay", json={"delay_ms": 55.0}).status_code == 200
     )

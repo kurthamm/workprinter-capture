@@ -1,6 +1,6 @@
 import pytest
 
-from wpcap.machine import MachineConfig, MachineState
+from wpcap.machine import MachineConfig, MachineState, ReelMeta
 from wpcap.sim.camera import decode_number
 from wpcap.sim.film import SimFilm
 from wpcap.sim.rig import SimRig
@@ -44,12 +44,38 @@ def test_click_window_brackets_the_last_click(tmp_path):
     assert rig.machine.click_window() == []
     # click 21, its 40 ms delay, then 70 ms more so 3+ pictures follow the target
     rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
-    window = rig.machine.click_window(before=3, after=3)
+    window = rig.machine.click_window()
     offsets = [ms for ms, _ in window]
     assert len(window) == 7
     assert offsets == sorted(offsets)
     assert offsets[3] == min(offsets, key=abs)  # the middle one is the picked time
     assert abs(offsets[3]) <= 9  # within one 60 fps camera interval (16.7 ms) of the target
+
+
+def test_click_window_survives_stop_and_the_camera_streaming_on(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
+    rig.machine.stop()
+    n, _ = rig.machine.last_saved()
+    # the ring buffer holds about one second; the operator calibrates later than that
+    rig.run_for(2 * S)
+    window = rig.machine.click_window()
+    offsets = [ms for ms, _ in window]
+    assert len(window) == 7
+    assert all(abs(ms) <= 60 for ms in offsets), offsets
+    assert offsets[3] == min(offsets, key=abs)
+    assert decode_number(window[3][1].pixels) == n  # the picture of the last click's frame
+
+
+def test_click_window_is_empty_on_a_new_reel(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
+    rig.machine.stop()
+    assert len(rig.machine.click_window()) == 7
+    rig.machine.new_reel(ReelMeta())
+    assert rig.machine.click_window() == []
 
 
 def test_set_delay_takes_effect_next_click_and_is_recorded(tmp_path):

@@ -166,7 +166,7 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
     @app.get("/api/machines/{name}/calibration", dependencies=[Depends(require_login)])
     def calibration(name: str):
         m = machine(name)
-        window = m.click_window(3, 3)
+        window = m.click_window()
         pics = [to_jpeg(p.pixels) for _, p in window]
         with cal_lock:
             calibration_sets[name] = pics

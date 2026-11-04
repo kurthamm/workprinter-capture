@@ -136,3 +136,11 @@ def test_window_is_shorter_at_the_edges():
     assert [p.index for p in rb.window(0, before=3, after=1)] == [0, 1]
     assert [p.index for p in rb.window(30 * MS, before=1, after=3)] == [2, 3]
     assert RingBuffer().window(0, 1, 1) == []
+
+
+def test_window_is_empty_when_every_picture_is_far_from_the_target():
+    rb = RingBuffer(window_ns=10**9)
+    for i in range(4):
+        rb.push(pic(i, 1000 + i * 10))  # 1000..1030 ms
+    assert rb.window(700 * MS, before=1, after=1) == []  # nearest is 300 ms away
+    assert [p.index for p in rb.window(810 * MS, before=0, after=0)] == [0]  # 190 ms away

@@ -36,6 +36,12 @@ class MachineState(StrEnum):
 
 FAULT_KINDS = {"camera", "missed_frame", "storage", "sync", "sync_box", "operator", "accounting"}
 
+# Calibration strip: pictures before and after the one nearest a click's target time, copied
+# once the newest picture is this far past the target (3 pictures at 60 fps are 50 ms).
+CAL_BEFORE = 3
+CAL_AFTER = 3
+CAL_SNAPSHOT_AFTER_NS = 60_000_000
+
 
 @dataclass(frozen=True)
 class Fault:
@@ -148,6 +154,11 @@ class Machine:
         self._last_picture_ns: int | None = None
         self._live: Picture | None = None
         self._last_saved: tuple[int, Picture] | None = None
+        # Calibration: the pictures around the last click are copied (references only) once
+        # the click is CAL_SNAPSHOT_AFTER_NS old, so the strip survives the camera streaming on
+        # after Stop (the ring buffer only holds about a second).
+        self._cal_pending_target: int | None = None
+        self._cal_window: list[tuple[int, Picture]] = []
         self._pictures_seen = 0
         # Fault kinds already raised while their condition persists: each is raised once,
         # and forgotten on resume, new reel, a new segment, or when the machine is Ready again.
@@ -266,6 +277,13 @@ class Machine:
                 )
                 return
             self._picker.on_picture(p)
+            target = self._cal_pending_target
+            if target is not None and p.t_ns >= target + CAL_SNAPSHOT_AFTER_NS:
+                self._cal_window = [
+                    (round((q.t_ns - target) / 1e6), q)
+                    for q in self._picker.buffer.window(target, CAL_BEFORE, CAL_AFTER)
+                ]
+                self._cal_pending_target = None
 
     def on_bounce(self, seq: int, t_us: int) -> None:
         with self._event():
@@ -340,6 +358,7 @@ class Machine:
                 }
             )
             self._picker.on_click(PendingClick(ev, n, 0))
+            self._cal_pending_target = self._picker.last_target_ns
 
     def _on_picked(self, picked: Picked) -> None:
         n = picked.pending.frame_number
@@ -572,13 +591,12 @@ class Machine:
         with self._lock:
             return self._last_saved
 
-    def click_window(self, before: int = 3, after: int = 3) -> list[tuple[int, Picture]]:
-        """Pictures around the last click's target time, with their offset in ms (rounded)."""
+    def click_window(self) -> list[tuple[int, Picture]]:
+        """The CAL_BEFORE + 1 + CAL_AFTER pictures around the target time of the last click
+        that is at least CAL_SNAPSHOT_AFTER_NS old, with their offset in ms (rounded), oldest
+        first. Empty before such a click on this reel."""
         with self._lock:
-            target = self._picker.last_target_ns
-            if target is None:
-                return []
-            return [(round((p.t_ns - target) / 1e6), p) for p in self._picker.window(before, after)]
+            return list(self._cal_window)
 
     def set_delay_ms(self, delay_ms: float) -> None:
         """Calibration: the delay from switch closure to the sharp picture. Not while recording
@@ -705,10 +723,13 @@ class Machine:
     def _replace_picker(self, reason: str) -> None:
         self._fail_pending_clicks(reason)
         self._picker = self._new_picker()
+        # The pictures around a click not yet snapshotted left with the old buffer.
+        self._cal_pending_target = None
 
     def _detach_reel(self) -> tuple[Saver | None, Accounting, Journal | None]:
         """Under the lock: close the open reel; return its saver, accounting and journal."""
         self._replace_picker("reel closed")
+        self._cal_window = []
         saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
         self._journal = None
