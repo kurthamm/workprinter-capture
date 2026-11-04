@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
 
-from wpcap.alerts import AlertBus, NtfyAlerter, NtfyError
+from wpcap.alerts import AlertBus, NtfyAlerter, NtfyError, should_forward
 from wpcap.config import NtfyConfig
 
 
@@ -126,8 +126,8 @@ def test_bus_reports_forward_failure_once_per_minute_and_keeps_going():
 
     bus = AlertBus(forward=Dead())
     a = bus.for_machine("m")
-    a.alert("info", "one", "")
-    a.alert("info", "two", "")
+    a.alert("warning", "one", "")
+    a.alert("warning", "two", "")
     bus.close()
     titles = [r.title for r in bus.recent()]
     # the complaint arrives from the forwarder thread, so its position among
@@ -186,7 +186,7 @@ def test_slow_forwarder_does_not_delay_alert():
 
     bus = AlertBus(forward=Slow())
     a = bus.for_machine("m")
-    a.alert("info", "warm", "")  # starts the thread; the next ones queue behind the sleep
+    a.alert("warning", "warm", "")  # starts the thread; the next ones queue behind the sleep
     t0 = time.monotonic()
     a.alert("problem", "STOP", "")
     assert time.monotonic() - t0 < 0.05
@@ -205,10 +205,38 @@ def test_forward_queue_overflow_drops_oldest_and_complains():
     bus = AlertBus(forward=Blocked())
     a = bus.for_machine("m")
     for i in range(105):
-        a.alert("info", str(i), "")
+        a.alert("warning", str(i), "")
     gate.set()
     bus.close()
     assert bus.forward_dropped >= 4
     assert any(r.title == "Phone alert failed" and r.message == "phone alert queue full"
                for r in bus.recent(200))
     assert seen[-1] == "104"
+
+
+def test_only_problems_warnings_and_reel_finished_go_to_the_phone():
+    assert should_forward("problem", "STOP WorkPrinter 1 NOW")
+    assert should_forward("warning", "WorkPrinter 1")
+    assert should_forward("info", "Reel finished — switch off WorkPrinter 1")
+    assert not should_forward("info", "Recovered reel")
+    with pytest.raises(ValueError):
+        should_forward("loud", "x")
+
+
+def test_bus_forwards_by_should_forward_and_keeps_everything_on_the_page():
+    sent = []
+
+    class Phone:
+        def alert(self, level, title, message):
+            sent.append(title)
+
+    bus = AlertBus(forward=Phone())
+    a = bus.for_machine("m")
+    a.alert("info", "routine", "")
+    a.alert("info", "Reel finished — switch off m", "")
+    a.alert("problem", "STOP m NOW", "")
+    bus.close()
+    assert sent == ["Reel finished — switch off m", "STOP m NOW"]
+    assert [r.title for r in bus.recent()] == [
+        "routine", "Reel finished — switch off m", "STOP m NOW"
+    ]

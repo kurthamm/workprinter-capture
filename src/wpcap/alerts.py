@@ -18,6 +18,14 @@ _PRIORITY = {"problem": "urgent", "warning": "high", "info": "default"}
 _TAGS = {"problem": "rotating_light", "warning": "warning", "info": "white_check_mark"}
 
 
+def should_forward(level: str, title: str) -> bool:
+    """Spec 6.5: the phone hears about problems, warnings and a finished reel; other info
+    (routine notices) stays on the page."""
+    if level not in LEVELS:
+        raise ValueError(f"bad alert level {level}")
+    return level != "info" or title.startswith("Reel finished")
+
+
 @dataclass(frozen=True)
 class Alert:
     level: str
@@ -157,7 +165,7 @@ class AlertBus:
             subs = list(self._subs)
         for s in subs:
             s._put(a)
-        if forward and self._forward is not None:
+        if forward and self._forward is not None and should_forward(level, title):
             self._enqueue_forward(a)
 
     def _complain(self, message: str, machine: str) -> None:
