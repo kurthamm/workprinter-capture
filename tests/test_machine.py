@@ -611,3 +611,9 @@ def test_shutdown_leaves_machine_shut_down_and_rejects_actions(tmp_path):
         rig.machine.new_reel(ReelMeta(name="After"))
     rig.machine.tick()  # ticks after shutdown are harmless
     assert rig.machine.status().state == MachineState.SHUT_DOWN
+
+
+def test_new_reel_rejects_unknown_film_type(tmp_path):
+    rig = SimRig(cfg(tmp_path), SimFilm(frames=30, start_ns=3 * S))
+    with pytest.raises(ValueError, match="film_type"):
+        rig.machine.new_reel(ReelMeta(film_type="16mm"))

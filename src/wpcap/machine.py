@@ -206,6 +206,8 @@ class Machine:
     # ---- operator actions ------------------------------------------------------------------
 
     def new_reel(self, meta: ReelMeta) -> None:
+        if meta.film_type not in ("super8", "regular8"):
+            raise ValueError(f"film_type must be 'super8' or 'regular8', not {meta.film_type!r}")
         if meta.name is not None:
             ReelFolder.check_name(meta.name)
         with self._event():
