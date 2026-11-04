@@ -19,7 +19,7 @@ main { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));
 .card[data-state="recording"] { border-color:var(--green); animation: pulse 1.2s infinite; }
 .card[data-state="not_ready"] { border-color:var(--amber); }
 .card[data-state="reel_finished"] { border-color:var(--blue); }
-.card[data-state="stopped"] { border-color:var(--red); }
+.card[data-state="stopped"], .card[data-state="dead"] { border-color:var(--red); }
 @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(46,204,113,.35); } }
 .card-head { display:flex; justify-content:space-between; align-items:center; }
 .card-head h2 { margin:0; font-size:1.1rem; }
@@ -27,7 +27,8 @@ main { display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));
 .card[data-state="ready"] .status, .card[data-state="recording"] .status { color:var(--green); }
 .card[data-state="not_ready"] .status { color:var(--amber); }
 .card[data-state="reel_finished"] .status { color:var(--blue); }
-.card[data-state="stopped"] .status { color:var(--red); }
+.card[data-state="stopped"] .status, .card[data-state="dead"] .status { color:var(--red); }
+.cal-reason { color:var(--amber); font-size:.85rem; align-self:center; }
 .fault { margin:.6rem 0; padding:.6rem; background:#4a1010; border-radius:6px; }
 .pictures { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; margin:.6rem 0; }
 .pictures img { width:100%; background:#000; aspect-ratio:16/9; object-fit:contain; border-radius:4px; }

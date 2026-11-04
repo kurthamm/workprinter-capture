@@ -7,7 +7,7 @@ from test_web_api import app_config  # reuse the fixture helper
 from wpcap.service import Service
 from wpcap.web.app import create_app
 
-STATIC = Path("src/wpcap/web/static")
+STATIC = Path(__file__).parent.parent / "src/wpcap/web/static"
 
 
 def test_page_and_assets_are_served(tmp_path):

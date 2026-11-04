@@ -10,6 +10,7 @@
 <header>
   <h1>WorkPrinter Capture</h1>
   <div id="conn" class="conn">connecting…</div>
+  <div id="audio-off" class="conn lost">Alarm sound off — tap anywhere to enable</div>
   <div class="header-buttons">
     <button id="silence" class="danger hidden">Silence alarm</button>
     <button id="notify">Enable notifications</button>
@@ -66,6 +67,7 @@
       <button class="stop danger">Stop</button>
       <button class="resume">Resume</button>
       <button class="calibrate">Calibrate</button>
+      <span class="cal-reason"></span>
     </div>
     <form class="new-reel-form hidden">
       <label>Name <input name="name" placeholder="(machine and date if empty)"></label>
