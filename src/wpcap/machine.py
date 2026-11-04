@@ -619,12 +619,13 @@ class Machine:
                 raise RuntimeError("machine is shut down")
             if self.state == MachineState.RECORDING:
                 raise RuntimeError("cannot change the delay while recording: Stop first")
-            self.config.delay_ms = delay_ms
-            self._picker.set_delay(round(delay_ms * 1e6))
+            # The reel record first: if it fails, the delay for later clicks stays unchanged.
             if self.reel is not None:
                 data = self.reel.read_reel_json()
                 data["delay_ms"] = delay_ms
                 self.reel.write_reel_json(data)
+            self.config.delay_ms = delay_ms
+            self._picker.set_delay(round(delay_ms * 1e6))
 
     # ---- internals -------------------------------------------------------------------------
 

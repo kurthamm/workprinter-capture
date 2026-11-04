@@ -109,6 +109,35 @@ def test_set_delay_takes_effect_next_click_and_is_recorded(tmp_path):
     assert rig.machine.status().state == MachineState.RECORDING
 
 
+def test_set_delay_moves_the_picture_picked_by_the_next_click(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(2 * S)
+    rig.machine.set_delay_ms(120.0)
+    rig.run_until(film.switch_ns(5) + 120_000_000 + 70_000_000)
+    n, pic = rig.machine.last_saved()
+    # the picked picture is ~120 ms (not the old 40 ms) after its click, within one 60 fps interval
+    assert abs(pic.t_ns - (film.switch_ns(n) + 120_000_000)) <= 9_000_000
+
+
+def test_set_delay_leaves_the_delay_alone_when_the_reel_record_cannot_be_written(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(film.switch_ns(5) + 100_000_000)
+    rig.machine.stop()  # the delay can change only when stopped; the reel stays open
+    reel = rig.machine.reel
+    assert reel is not None
+
+    def broken(data):
+        raise OSError("disk gone")
+
+    reel.write_reel_json = broken
+    with pytest.raises(OSError):
+        rig.machine.set_delay_ms(55.0)
+    assert rig.machine.config.delay_ms == 40.0
+    assert reel.read_reel_json()["delay_ms"] == 40.0
+
+
 def test_set_delay_rejects_nonsense(tmp_path):
     rig = SimRig(cfg(tmp_path), SimFilm(frames=10, start_ns=3 * S))
     for bad in (-1.0, 1000.0, float("nan")):
