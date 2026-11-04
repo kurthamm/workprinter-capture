@@ -160,11 +160,8 @@ def test_stop_resume_and_new_reel_flow(client, svc, film_frames):
     assert shown[0]["feet"] == round(shown[0]["saved"] / 80, 1), shown[0]
 
 
-def test_new_reel_bad_name_is_400(client, svc, monkeypatch):
+def test_new_reel_bad_name_is_400(client, svc):
     login(client)
-    restarts = []
-    runner = svc.runner("WorkPrinter 2")
-    monkeypatch.setattr(runner, "restart_film", lambda: restarts.append(1))
     m = svc.machine("WorkPrinter 2")
     assert wait_for(lambda: m.status().state == MachineState.RECORDING, 15)
     before = m.reel.path
@@ -176,11 +173,13 @@ def test_new_reel_bad_name_is_400(client, svc, monkeypatch):
         assert r.status_code == 400, bad
         assert r.json()["error"]
     assert m.reel.path == before and m.status().state == MachineState.STOPPED
-    assert restarts == []
     r = client.post(
         "/api/machines/WorkPrinter 2/new-reel", json={"name": "good one", "film_type": "super8"}
     )
-    assert r.status_code == 200 and restarts == [1]
+    assert r.status_code == 200
+    # the reel opens on the first click of the fresh film
+    assert wait_for(lambda: m.reel is not None and m.reel.path != before, 15)
+    assert m.reel.path.name == "good one"
 
 
 @pytest.mark.parametrize("film_frames", [200])
@@ -203,6 +202,13 @@ def test_calibration_and_delay(client, svc, film_frames):
     assert offsets == sorted(offsets)
     r = client.get(cal["pictures"][3]["url"])
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    first_bytes = r.content
+    # a later calibration request does not change what the earlier strip's URLs show
+    later = client.get(cal_url).json()
+    assert later["pictures"][3]["url"] != cal["pictures"][3]["url"]
+    assert client.get(cal["pictures"][3]["url"]).content == first_bytes
+    base = cal["pictures"][3]["url"].rsplit("/", 2)[0]
+    assert client.get(f"{base}/9999/3.jpg").status_code == 404
     r = client.post("/api/machines/WorkPrinter 1/delay", json={"delay_ms": 55.0})
     assert r.status_code == 409  # recording
     client.post("/api/machines/WorkPrinter 1/stop")

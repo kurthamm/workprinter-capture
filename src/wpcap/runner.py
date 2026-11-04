@@ -7,12 +7,21 @@ import threading
 import traceback
 from typing import Protocol
 
-from wpcap.config import MachineSpec
-from wpcap.machine import Alerter, Machine, MachineConfig, MachineState
+from wpcap.config import SIM_MIN_FRAMES, MachineSpec
+from wpcap.machine import Alerter, Machine, MachineConfig, MachineState, ReelMeta
 from wpcap.sim.film import SimFilm
 from wpcap.sim.rig import SimRig
 
 S = 1_000_000_000
+
+
+class _NewReelJob:
+    """A New Reel handed to the runner thread; the caller waits for its outcome."""
+
+    def __init__(self, meta: ReelMeta) -> None:
+        self.meta = meta
+        self.done = threading.Event()
+        self.error: Exception | None = None
 
 
 class Runner(Protocol):
@@ -40,7 +49,7 @@ class SimRunner:
             reel_root=spec.reel_root,
             delay_ms=spec.delay_ms,
             debounce_us=spec.debounce_us,
-            gate_min_frames=20,
+            gate_min_frames=SIM_MIN_FRAMES,
             gate_empty_needed=8,
         )
         self.rig = SimRig(config, self._film(0), alerter=alerter, free_bytes=free_bytes)
@@ -50,7 +59,7 @@ class SimRunner:
         self._error: str | None = None
         self._started = False
         self._pending_lock = threading.Lock()
-        self._pending_film: SimFilm | None = None
+        self._pending_job: _NewReelJob | None = None
 
     def _film(self, now_ns: int) -> SimFilm:
         return SimFilm(frames=self.spec.sim_frames, start_ns=now_ns + 3 * S)
@@ -65,9 +74,9 @@ class SimRunner:
         try:
             while not self._stop.is_set():
                 with self._pending_lock:
-                    film, self._pending_film = self._pending_film, None
-                if film is not None:
-                    self.rig.load_film(film)
+                    job, self._pending_job = self._pending_job, None
+                if job is not None:
+                    self._apply(job)
                 self.rig.run_realtime(0.25)
         except Exception as e:  # noqa: BLE001 - reported, never hidden
             self._error = f"{e}\n{traceback.format_exc()}"
@@ -84,15 +93,33 @@ class SimRunner:
         if self.machine.status().state != MachineState.SHUT_DOWN:
             self.machine.shutdown()
 
-    def restart_film(self) -> None:
-        """Demo Mode: thread a fresh simulated reel. Only between reels. The runner thread
-        applies it at the top of its next loop (within 0.25 s), so only that thread touches the
-        rig."""
+    def _apply(self, job: _NewReelJob) -> None:
+        """On the runner thread, which alone steps the rig: the machine opens the new reel and
+        the fresh film is threaded with no step in between, so a switch of the old film cannot
+        open the new reel."""
+        try:
+            self.machine.new_reel(job.meta)
+            self.rig.load_film(self._film(self.rig.clock.now_ns()))
+        except Exception as e:  # noqa: BLE001 - handed to the caller of new_reel, who raises it
+            job.error = e
+        finally:
+            job.done.set()
+
+    def new_reel(self, meta: ReelMeta) -> None:
+        """Demo Mode: open a new reel and thread a fresh simulated film. Returns once the runner
+        thread has done both (within 0.25 s); the machine's refusal is raised here."""
         if not self.alive:
             raise RuntimeError("runner is not running")
-        film = self._film(self.rig.clock.now_ns())
+        job = _NewReelJob(meta)
         with self._pending_lock:
-            self._pending_film = film
+            if self._pending_job is not None:
+                raise RuntimeError("a New Reel is already being applied")
+            self._pending_job = job
+        while not job.done.wait(0.05):
+            if not self.alive:
+                raise RuntimeError("runner stopped before the New Reel was applied")
+        if job.error is not None:
+            raise job.error
 
     @property
     def alive(self) -> bool:

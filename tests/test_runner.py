@@ -5,7 +5,7 @@ import pytest
 
 from wpcap.alerts import AlertBus
 from wpcap.config import MachineSpec
-from wpcap.machine import MachineState
+from wpcap.machine import MachineState, ReelMeta
 from wpcap.runner import SimRunner
 
 
@@ -62,16 +62,13 @@ def test_thread_death_is_reported_not_hidden(tmp_path, monkeypatch):
     r.stop()  # idempotent after death
 
 
-def test_restart_film_lets_the_demo_scan_again(tmp_path):
+def test_new_reel_threads_fresh_film_and_the_demo_scans_again(tmp_path):
     bus = AlertBus()
     r = SimRunner(spec(tmp_path, frames=30), bus.for_machine("WorkPrinter 1"))
     r.start()
     assert wait_for(lambda: r.machine.status().state == MachineState.REEL_FINISHED, 20)
     first = r.machine.reel.path
-    r.restart_film()
-    from wpcap.machine import ReelMeta
-
-    r.machine.new_reel(ReelMeta(name="Second"))
+    r.new_reel(ReelMeta(name="Second"))
     assert wait_for(lambda: r.machine.status().state == MachineState.RECORDING, 10)
     assert r.machine.reel.path != first
     r.stop()
@@ -109,7 +106,22 @@ def test_start_twice_raises(tmp_path):
         r.stop()
 
 
-def test_restart_film_on_a_dead_runner_raises(tmp_path):
+def test_new_reel_refused_by_the_machine_raises_here_and_keeps_the_runner_going(tmp_path):
+    r = SimRunner(spec(tmp_path, frames=300), AlertBus().for_machine("WorkPrinter 1"))
+    r.start()
+    try:
+        assert wait_for(lambda: r.machine.status().state == MachineState.RECORDING, 10)
+        with pytest.raises(RuntimeError):
+            r.new_reel(ReelMeta(name="Too soon"))  # recording: Stop first
+        with pytest.raises(ValueError):
+            r.new_reel(ReelMeta(name="what?"))
+        assert r.alive and r.error is None
+        assert r.machine.status().state == MachineState.RECORDING
+    finally:
+        r.stop()
+
+
+def test_new_reel_on_a_dead_runner_raises(tmp_path):
     r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
     with pytest.raises(RuntimeError, match="not running"):
-        r.restart_film()
+        r.new_reel(ReelMeta(name="x"))

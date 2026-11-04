@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import threading
 import time
@@ -46,13 +47,18 @@ class NewReelBody(BaseModel):
     customer: str = ""
     job_number: str = ""
 
+CALIBRATION_SETS_KEPT = 4
+
 
 def create_app(service: Service, config: AppConfig) -> FastAPI:
     app = FastAPI(title="WorkPrinter Capture", docs_url=None, redoc_url=None, openapi_url=None)
     # Set by the server on shutdown so open event streams end instead of blocking it.
     app.state.shutting_down = threading.Event()
     secret = config.server.secret
-    calibration_sets: dict[str, list[bytes]] = {}
+    # Each calibration request keeps its own pictures under its own id, so a page still loading
+    # an earlier strip never shows pictures of a later one beside the earlier offsets.
+    calibration_sets: dict[str, dict[int, list[bytes]]] = {}
+    calibration_ids = itertools.count(1)
     cal_lock = threading.Lock()
     # Per app, not per module: an asyncio.Semaphore binds to the event loop that first waits
     # on it, and each server run (and each test client) has its own loop.
@@ -178,23 +184,30 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
         window = m.click_window()
         pics = [to_jpeg(p.pixels) for _, p in window]
         with cal_lock:
-            calibration_sets[name] = pics
+            sets = calibration_sets.setdefault(name, {})
+            set_id = next(calibration_ids)
+            sets[set_id] = pics
+            while len(sets) > CALIBRATION_SETS_KEPT:
+                del sets[min(sets)]
         return {
             "delay_ms": m.config.delay_ms,
             "pictures": [
                 {
                     "offset_ms": off,
-                    "url": f"/api/machines/{quote(name, safe='')}/calibration/{i}.jpg",
+                    "url": f"/api/machines/{quote(name, safe='')}/calibration/{set_id}/{i}.jpg",
                 }
                 for i, (off, _) in enumerate(window)
             ],
         }
 
-    @app.get("/api/machines/{name}/calibration/{i}.jpg", dependencies=[Depends(require_login)])
-    def calibration_picture(name: str, i: int):
+    @app.get(
+        "/api/machines/{name}/calibration/{set_id}/{i}.jpg",
+        dependencies=[Depends(require_login)],
+    )
+    def calibration_picture(name: str, set_id: int, i: int):
         machine(name)
         with cal_lock:
-            pics = calibration_sets.get(name, [])
+            pics = calibration_sets.get(name, {}).get(set_id, [])
             if not 0 <= i < len(pics):
                 raise HTTPException(404, "calibration picture gone; fetch calibration again")
             return jpeg(pics[i])
@@ -228,9 +241,10 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
         )
 
         def go():
-            m.new_reel(meta)
             if isinstance(runner, SimRunner):
-                runner.restart_film()
+                runner.new_reel(meta)  # also threads the fresh simulated film
+            else:
+                m.new_reel(meta)
 
         act(go)
         return {"ok": True, "reel": body.name or None}
