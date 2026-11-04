@@ -52,14 +52,13 @@ class Service:
             self._recover_reels(spec)
         for spec in self.config.machines:
             self.runners[spec.name] = self._build_runner(spec)
-        started: list[Runner] = []
         try:
             for r in self.runners.values():
                 r.start()
-                started.append(r)
-        except Exception:
-            for r in started:
-                r.stop()
+        except Exception as start_error:
+            cleanup = self._stop_all(list(self.runners.values()))
+            if cleanup:
+                start_error.add_note("cleanup after failed start: " + "; ".join(cleanup))
             raise
 
     def _build_runner(self, spec: MachineSpec) -> Runner:
@@ -88,20 +87,25 @@ class Service:
                 report = after
             self.recovery_reports.append(report)
 
+    @staticmethod
+    def _stop_all(runners: list[Runner]) -> list[str]:
+        errors: list[str] = []
+        for r in runners:
+            try:
+                r.stop()
+            except Exception as e:  # noqa: BLE001 - every runner gets its chance to stop
+                errors.append(f"{type(e).__name__}: {e}")
+        return errors
+
     def stop(self) -> None:
         if self._stopped:
             return
         self._stopped = True
-        errors = []
-        for r in self.runners.values():
-            try:
-                r.stop()
-            except Exception as e:  # noqa: BLE001 - every runner gets its chance to stop
-                errors.append(str(e))
+        errors = self._stop_all(list(self.runners.values()))
         try:
             self.bus.close()
         except Exception as e:  # noqa: BLE001 - reported together with any runner errors
-            errors.append(str(e))
+            errors.append(f"{type(e).__name__}: {e}")
         if errors:
             raise ServiceError("; ".join(errors))
 

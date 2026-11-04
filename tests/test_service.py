@@ -37,6 +37,7 @@ def test_two_sim_machines_scan_at_once_and_snapshot_reports_both(tmp_path):
     svc = Service(app_config(tmp_path))
     svc.start()
     try:
+        before = svc.machine("WorkPrinter 1").status()
         assert list(svc.runners) == ["WorkPrinter 1", "WorkPrinter 2"]
         assert wait_for(
             lambda: all(m["state"] == "reel_finished" for m in svc.snapshot()["machines"]), 25
@@ -47,6 +48,8 @@ def test_two_sim_machines_scan_at_once_and_snapshot_reports_both(tmp_path):
         assert m1["film_type"] == "super8" and m2["film_type"] == "regular8"
         assert m1["feet"] == round(m1["saved"] / 72, 1) and m2["feet"] == round(m2["saved"] / 80, 1)
         assert m1["length_s"] == round(m1["saved"] / 18, 1)
+        assert m1["saved"] >= before.frames_saved
+        assert m1["saved"] + m1["pending"] + m1["failed"] == m1["clicks"]
         assert m1["free_gb"] is None or m1["free_gb"] > 0
         assert set(snap["pc"]) == {"cpu_percent", "memory_percent", "temperature_c"}
         assert m1["runner_alive"] and m1["runner_error"] is None
@@ -67,7 +70,7 @@ def test_missing_reel_root_stops_startup(tmp_path):
         svc.start()
     assert str(bad) in str(e.value)
     assert not bad.exists()  # never created on the wrong disk
-    assert all(not r.alive for r in svc.runners.values())
+    assert svc.runners == {}
 
 
 def test_startup_recovery_repairs_and_warns(tmp_path):
@@ -102,3 +105,32 @@ def test_stop_is_idempotent_and_start_twice_is_an_error(tmp_path):
         svc.start()
     svc.stop()
     svc.stop()
+
+
+def test_failed_start_stops_every_runner_and_keeps_original_error(tmp_path, monkeypatch):
+    stops = []
+
+    class Fake:
+        alive = False
+        error = None
+
+        def __init__(self, name, boom):
+            self.name, self.boom = name, boom
+
+        def start(self):
+            if self.boom:
+                raise RuntimeError("boom")
+
+        def stop(self):
+            stops.append(self.name)
+            if self.name == "WorkPrinter 1":
+                raise OSError("stop failed")
+
+    monkeypatch.setattr(
+        Service, "_build_runner", lambda self, spec: Fake(spec.name, spec.name.endswith("2"))
+    )
+    svc = Service(app_config(tmp_path))
+    with pytest.raises(RuntimeError, match="boom") as e:
+        svc.start()
+    assert stops == ["WorkPrinter 1", "WorkPrinter 2"]
+    assert any("OSError: stop failed" in n for n in e.value.__notes__)
