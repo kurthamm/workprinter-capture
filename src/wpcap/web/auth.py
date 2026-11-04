@@ -22,6 +22,9 @@ def check_token(secret: str, token: str, max_age_s: float) -> bool:
     if not _TOKEN_RE.fullmatch(token):
         return False
     stamp, sig = token.split(".")
+    # A real stamp is a Unix time (10 digits); a huge one would make int() itself fail.
+    if len(stamp) > 20:
+        return False
     issued = int(stamp)
     expected = hmac.new(secret.encode(), stamp.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):

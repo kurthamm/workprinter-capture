@@ -21,3 +21,8 @@ def test_non_ascii_or_malformed_token_is_rejected():
     assert check_token("s" * 64, "1.é", 60) is False
     assert check_token("s" * 64, "x.abc", 60) is False
     assert check_token("s" * 64, "1.2.3", 60) is False
+
+
+def test_overlong_stamp_is_rejected_not_an_error():
+    assert check_token("s" * 64, "9" * 5000 + ".abc", 60) is False
+    assert check_token("s" * 64, "1" * 21 + ".abc", 60) is False
