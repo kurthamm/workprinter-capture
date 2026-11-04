@@ -26,6 +26,9 @@ from wpcap.web.auth import COOKIE, SESSION_DAYS, check_token, make_token
 STATIC = Path(__file__).parent / "static"
 STATUS_PERIOD_S = 0.5
 WRONG_PASSWORD_DELAY_S = 1.0
+# Password checks running at once. scrypt takes about 50 ms of CPU and a thread from the pool
+# the event streams also use; parallel login attempts queue here instead of saturating both.
+LOGIN_CHECKS_AT_ONCE = 2
 
 
 class LoginBody(BaseModel):
@@ -51,6 +54,9 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
     secret = config.server.secret
     calibration_sets: dict[str, list[bytes]] = {}
     cal_lock = threading.Lock()
+    # Per app, not per module: an asyncio.Semaphore binds to the event loop that first waits
+    # on it, and each server run (and each test client) has its own loop.
+    login_checks = asyncio.Semaphore(LOGIN_CHECKS_AT_ONCE)
 
     # ---- auth ------------------------------------------------------------------------------
 
@@ -80,7 +86,10 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
 
     @app.post("/api/login")
     async def login(body: LoginBody, response: Response):
-        if not await asyncio.to_thread(verify_password, body.password, config.server.password_hash):
+        async with login_checks:
+            stored = config.server.password_hash
+            ok = await asyncio.to_thread(verify_password, body.password, stored)
+        if not ok:
             await asyncio.sleep(WRONG_PASSWORD_DELAY_S)
             raise HTTPException(401, "wrong password")
         response.set_cookie(

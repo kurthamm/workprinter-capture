@@ -274,3 +274,36 @@ def test_unknown_route_has_error_body(client):
 def test_non_ascii_cookie_is_401(client):
     r = client.get("/api/status", headers={"cookie": "wpcap_session=1.é".encode()})
     assert r.status_code == 401 and r.json() == {"error": "login required"}
+
+
+def test_parallel_logins_check_at_most_two_passwords_at_once(svc, monkeypatch):
+    import threading
+
+    import wpcap.web.app as web_app
+
+    lock = threading.Lock()
+    running = [0, 0]  # now, most at once
+
+    def slow_verify(password, stored):
+        with lock:
+            running[0] += 1
+            running[1] = max(running[1], running[0])
+        time.sleep(0.2)
+        with lock:
+            running[0] -= 1
+        return True
+
+    monkeypatch.setattr(web_app, "verify_password", slow_verify)
+    with TestClient(create_app(svc, svc.config), base_url="https://testserver") as c:
+        codes = []
+
+        def attempt():
+            codes.append(c.post("/api/login", json={"password": "x"}).status_code)
+
+        threads = [threading.Thread(target=attempt) for _ in range(6)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+    assert codes == [200] * 6
+    assert running[1] == web_app.LOGIN_CHECKS_AT_ONCE
