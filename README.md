@@ -18,7 +18,24 @@ Scanning is stage one. The same PC then runs **DaVinci Resolve** (free) to stabi
 
 ## Status
 
-Capture core built and tested (Python, simulated camera and sync box; 163 tests). Next: the web page, then the Pico firmware and the Windows camera backend. Run the simulator with `python -m wpcap demo --reels DIR --frames N`.
+The capture core and the web page/service exist and their tests pass (Python, simulated camera and sync box). Still to come: Review and Create Movie, the Pico firmware, the Windows camera backend and the installer.
+
+## Run it (Demo Mode)
+
+Demo Mode runs two simulated WorkPrinters, so no hardware is needed. The full setup guide comes later.
+
+```
+python -m wpcap init-config --out wpcap.toml --reels DIR --certs DIR
+python -m wpcap serve --config wpcap.toml
+```
+
+`init-config` asks for a password. Optional flags: `--bind`, `--port` (default 8443), `--sim-frames`, `--host`, `--ip` (names and addresses for the certificate).
+
+Then open `https://<pc-name-or-ip>:8443/` on a phone or PC and log in. Both simulated machines record a simulated reel as soon as the page is up.
+
+**One-time certificate step.** The page uses HTTPS with a certificate made by "WorkPrinter Capture Local CA". Import `certs/ca.crt` (in the folder given to `--certs`) into the phone or PC as a trusted certificate, and the browser shows no warning.
+
+**Phone alerts (optional).** Install ntfy (ntfy.sh) and run `ntfy serve --listen-http :2586`. Uncomment the `[ntfy]` section in `wpcap.toml`, then subscribe to its topic in the ntfy phone app.
 
 - `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md` — version 1 design spec (one Windows PC + USB sync boxes)
 - `DECISIONS.md` — research (including MovieStuff's archived instructions) and every decision
