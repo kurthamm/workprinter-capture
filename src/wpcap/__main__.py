@@ -146,6 +146,19 @@ def cmd_gen_cert(args: argparse.Namespace) -> int:
     return 0
 
 
+def stop_signals() -> tuple[signal.Signals, ...]:
+    """The signals uvicorn turns into a graceful shutdown (and re-raises afterwards)."""
+    sigs = (signal.SIGINT, signal.SIGTERM)
+    if hasattr(signal, "SIGBREAK"):  # Windows: Ctrl+Break, the usual "stop" from a supervisor
+        sigs += (signal.SIGBREAK,)
+    return sigs
+
+
+def absorb_reraised_stop_signals() -> None:
+    for sig in stop_signals():
+        signal.signal(sig, lambda signum, frame: None)
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     import uvicorn
 
@@ -189,15 +202,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
                 timeout_graceful_shutdown=5,
             )
         )
-        # What happens on Ctrl+C / SIGTERM: server.run() installs uvicorn's own handlers
-        # (a second Ctrl+C forces exit), shuts down gracefully, restores the handlers that
-        # were set before, then re-raises the captured signal. The handlers below only absorb
-        # that re-raised signal so it neither raises KeyboardInterrupt nor kills the process
-        # before the service is stopped.
-        signal.signal(signal.SIGINT, lambda signum, frame: None)
-        signal.signal(signal.SIGTERM, lambda signum, frame: None)
+        # What happens on Ctrl+C / SIGTERM / Ctrl+Break: server.run() installs uvicorn's own
+        # handlers (a second Ctrl+C forces exit), shuts down gracefully, restores the handlers
+        # that were set before, then re-raises the captured signal. The handlers installed here
+        # only absorb that re-raised signal so it neither raises KeyboardInterrupt nor kills
+        # the process before the service is stopped.
+        absorb_reraised_stop_signals()
         server.run()
     finally:
+        # A Ctrl+C during a slow stop must still interrupt it, not be absorbed.
+        signal.signal(signal.SIGINT, signal.default_int_handler)
         service.stop()
         print("stopped: machines shut down, reels closed", flush=True)
     return 0

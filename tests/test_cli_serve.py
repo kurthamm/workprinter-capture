@@ -257,3 +257,13 @@ def test_serve_stops_while_event_stream_is_open(tmp_path, sig):
     out_text = proc.stdout.read()
     assert proc.returncode == 0, out_text
     assert "stopped" in out_text.lower()
+
+
+def test_stop_signals_cover_every_signal_uvicorn_reraises():
+    import uvicorn.server
+
+    from wpcap.__main__ import stop_signals
+
+    assert set(uvicorn.server.HANDLED_SIGNALS) <= set(stop_signals())
+    if sys.platform == "win32":
+        assert signal.SIGBREAK in stop_signals()
