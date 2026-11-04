@@ -162,9 +162,10 @@ class AlertBus:
             a = Alert(level, title, message, time.time(), machine, self._next_id)
             self._next_id += 1
             self._recent.append(a)
-            subs = list(self._subs)
-        for s in subs:
-            s._put(a)
+            # Under the lock so two machine threads reach every subscriber in id order.
+            # Subscription._put takes only its own lock and never calls back into the bus.
+            for s in self._subs:
+                s._put(a)
         if forward and self._forward is not None and should_forward(level, title):
             self._enqueue_forward(a)
 
@@ -178,6 +179,7 @@ class AlertBus:
 
     def _enqueue_forward(self, a: Alert) -> None:
         """Hand the alert to the forwarder thread; never blocks, never raises."""
+        full = False
         with self._lock:
             if self._fclosed:
                 return
@@ -186,18 +188,18 @@ class AlertBus:
                     target=self._forward_loop, name="alert-forwarder", daemon=True
                 )
                 self._fthread.start()
-        full = False
-        while True:
-            try:
-                self._fq.put_nowait(a)
-                break
-            except queue.Full:
-                full = True
+            # Under the lock so close() cannot slip its stop sentinel in ahead of this alert.
+            while True:
                 try:
-                    self._fq.get_nowait()
-                except queue.Empty:
-                    continue
-                self.forward_dropped += 1
+                    self._fq.put_nowait(a)
+                    break
+                except queue.Full:
+                    full = True
+                    try:
+                        self._fq.get_nowait()
+                    except queue.Empty:
+                        continue
+                    self.forward_dropped += 1
         if full:
             self._complain("phone alert queue full", a.machine)
 
@@ -212,17 +214,27 @@ class AlertBus:
             except Exception as e:  # noqa: BLE001 - delivery failure must never reach capture
                 self._complain(str(e), a.machine)
 
-    def close(self, timeout_s: float = 5.0) -> None:
-        """Deliver what is queued, then stop the forwarder thread."""
+    def close(
+        self, timeout_s: float = 5.0, per_alert_s: float = 3.5, max_wait_s: float = 60.0
+    ) -> None:
+        """Deliver what is queued, then stop the forwarder thread. Each queued alert may take a
+        phone request's full timeout, so the wait grows with the backlog (up to max_wait_s);
+        if it still runs out, the error says how many alerts were not delivered."""
         with self._lock:
             self._fclosed = True
             t = self._fthread
         if t is None:
             return
+        deadline = time.monotonic() + min(max_wait_s, timeout_s + self._fq.qsize() * per_alert_s)
         try:
-            self._fq.put(None, timeout=timeout_s)
+            self._fq.put(None, timeout=max(0.0, deadline - time.monotonic()))
         except queue.Full as e:
-            raise TimeoutError("alert forwarder did not accept the stop sentinel") from e
-        t.join(timeout_s)
+            raise TimeoutError(
+                f"alert forwarder did not accept the stop sentinel; "
+                f"{self._fq.qsize()} phone alerts undelivered"
+            ) from e
+        t.join(max(0.0, deadline - time.monotonic()))
         if t.is_alive():
-            raise TimeoutError("alert forwarder did not stop")
+            raise TimeoutError(
+                f"alert forwarder did not stop; {self._fq.qsize()} phone alerts undelivered"
+            )

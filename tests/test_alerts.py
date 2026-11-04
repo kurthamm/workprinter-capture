@@ -240,3 +240,36 @@ def test_bus_forwards_by_should_forward_and_keeps_everything_on_the_page():
     assert [r.title for r in bus.recent()] == [
         "routine", "Reel finished — switch off m", "STOP m NOW"
     ]
+
+
+def test_close_waits_for_a_slow_backlog_instead_of_giving_up_after_one_timeout():
+    class Slow:
+        sent: list[str] = []
+
+        def alert(self, level, title, message):
+            time.sleep(0.3)
+            Slow.sent.append(title)
+
+    bus = AlertBus(forward=Slow())
+    for n in range(3):
+        bus.for_machine("m").alert("problem", f"p{n}", "")
+    # 3 x 0.3 s of delivery against a 0.2 s base timeout: only a backlog-sized wait gets through
+    bus.close(timeout_s=0.2, per_alert_s=1.0)
+    assert Slow.sent == ["p0", "p1", "p2"]
+
+
+def test_close_reports_how_many_alerts_were_not_delivered():
+    release = threading.Event()
+
+    class Stuck:
+        def alert(self, level, title, message):
+            release.wait(30)
+
+    bus = AlertBus(forward=Stuck())
+    for n in range(3):
+        bus.for_machine("m").alert("problem", f"p{n}", "")
+    try:
+        with pytest.raises(TimeoutError, match=r"\d+ phone alerts undelivered"):
+            bus.close(timeout_s=0.2, per_alert_s=0.1)
+    finally:
+        release.set()
