@@ -93,7 +93,16 @@ class SimRig:
         while self.clock.now_ns() < end:
             target = start_sim + (time.perf_counter_ns() - start_wall)
             if target > self.clock.now_ns():
-                self.clock.set(min(target, end))
+                target = min(target, end)
+                # After a stall several switches may be overdue: step to each one's own time so
+                # each closes at its own timestamp instead of all at once (which reads as bounce).
+                while (
+                    self._next_switch < len(self.switch_times)
+                    and self.switch_times[self._next_switch] <= target
+                ):
+                    self.clock.set(max(self.clock.now_ns(), self.switch_times[self._next_switch]))
+                    self._step()
+                self.clock.set(target)
                 self._step()
             else:
                 time.sleep(step_ns / 1e9)

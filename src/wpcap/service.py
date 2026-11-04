@@ -25,7 +25,7 @@ class ServiceError(Exception):
 def _needs_repair(r: RecoveryReport) -> bool:
     return bool(
         r.half_written or r.journal_truncated or r.missing_final_newline or r.corrupt_frames
-        or r.orphan_clicks
+        or r.orphan_clicks or r.journaled_but_missing
     )
 
 

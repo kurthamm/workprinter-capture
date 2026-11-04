@@ -49,6 +49,7 @@ class SimRunner:
             reel_root=spec.reel_root,
             delay_ms=spec.delay_ms,
             debounce_us=spec.debounce_us,
+            film_type=spec.film_type,
             gate_min_frames=SIM_MIN_FRAMES,
             gate_empty_needed=8,
         )
@@ -74,7 +75,7 @@ class SimRunner:
         try:
             while not self._stop.is_set():
                 with self._pending_lock:
-                    job, self._pending_job = self._pending_job, None
+                    job = self._pending_job
                 if job is not None:
                     self._apply(job)
                 self.rig.run_realtime(0.25)
@@ -103,6 +104,9 @@ class SimRunner:
         except Exception as e:  # noqa: BLE001 - handed to the caller of new_reel, who raises it
             job.error = e
         finally:
+            # Cleared only now, so a second New Reel cannot replace this one while it applies.
+            with self._pending_lock:
+                self._pending_job = None
             job.done.set()
 
     def new_reel(self, meta: ReelMeta) -> None:

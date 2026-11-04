@@ -82,6 +82,7 @@ class MachineConfig:
     gate_std_max: float = 8.0
     gate_empty_needed: int = 24
     gate_min_frames: int = 100
+    film_type: str = "super8"  # a reel opened by the first click, with no New Reel before it
     exposure_jump: float = 25.0
     min_free_bytes: int = 2 * 1024**3
     max_interval_ratio: float = 2.0
@@ -675,7 +676,7 @@ class Machine:
     def _open_segment(self) -> None:
         if self.reel is None:
             try:
-                self._create_reel(self._pending_meta or ReelMeta())
+                self._create_reel(self._pending_meta or ReelMeta(film_type=self.config.film_type))
             except OSError as e:
                 self._fault(
                     Fault(
@@ -752,6 +753,7 @@ class Machine:
         self._cal_window = []
         self._cal_delay_ms = None
         self._inflight_pictures = {}
+        self._last_saved = None
         saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
         self.reel_film_type = None
@@ -830,14 +832,17 @@ class Machine:
                 span = self._click_times[-1] - self._click_times[0]
                 if span > 0:
                     fps = (len(self._click_times) - 1) * 1e9 / span
+            # Between New Reel and the first click no reel is open; the accounting is still the
+            # closed reel's (its drain needs it), so it must not be shown.
+            acc = self.accounting if self.reel is not None else None
             return MachineStatus(
                 state=self.state,
                 reel_name=self.reel.name if self.reel else None,
                 segment=self.segment,
-                frames_saved=self.accounting.saved,
-                frames_failed=self.accounting.failed,
-                frames_pending=self.accounting.pending,
-                clicks=self.accounting.clicks_accepted,
+                frames_saved=acc.saved if acc else 0,
+                frames_failed=acc.failed if acc else 0,
+                frames_pending=acc.pending if acc else 0,
+                clicks=acc.clicks_accepted if acc else 0,
                 bounces=self.bounces,
                 fps=fps,
                 sync_error_ms=self.link.clocksync.error_ms,

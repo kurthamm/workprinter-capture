@@ -34,7 +34,8 @@ def wait_for(pred, timeout_s):
 
 
 def test_two_sim_machines_scan_at_once_and_snapshot_reports_both(tmp_path):
-    svc = Service(app_config(tmp_path))
+    # 40 frames: round(40 / 72, 1) = 0.6 but round(40 / 80, 1) = 0.5, so a wrong divisor shows.
+    svc = Service(app_config(tmp_path, frames=40))
     svc.start()
     try:
         before = svc.machine("WorkPrinter 1").status()
@@ -48,6 +49,9 @@ def test_two_sim_machines_scan_at_once_and_snapshot_reports_both(tmp_path):
         assert m1["film_type"] == "super8" and m2["film_type"] == "regular8"
         assert m1["feet"] == round(m1["saved"] / 72, 1) and m2["feet"] == round(m2["saved"] / 80, 1)
         assert m1["length_s"] == round(m1["saved"] / 18, 1)
+        assert ReelFolder(tmp_path / "WorkPrinter 2" / m2["reel"]).read_reel_json()[
+            "film_type"
+        ] == "regular8"
         assert m1["saved"] >= before.frames_saved
         assert m1["saved"] + m1["pending"] + m1["failed"] == m1["clicks"]
         assert m1["free_gb"] is None or m1["free_gb"] > 0
@@ -134,3 +138,15 @@ def test_failed_start_stops_every_runner_and_keeps_original_error(tmp_path, monk
         svc.start()
     assert stops == ["WorkPrinter 1", "WorkPrinter 2"]
     assert any("OSError: stop failed" in n for n in e.value.__notes__)
+
+
+def test_a_journaled_frame_with_no_picture_is_repaired_and_reported(tmp_path):
+    from wpcap.recovery import RecoveryReport
+    from wpcap.service import _needs_repair
+
+    r = RecoveryReport.__new__(RecoveryReport)
+    for f in RecoveryReport.__dataclass_fields__:
+        object.__setattr__(r, f, () if f == "journaled_but_missing" else False)
+    assert not _needs_repair(r)
+    object.__setattr__(r, "journaled_but_missing", (7,))
+    assert _needs_repair(r)

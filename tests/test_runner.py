@@ -125,3 +125,19 @@ def test_new_reel_on_a_dead_runner_raises(tmp_path):
     r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
     with pytest.raises(RuntimeError, match="not running"):
         r.new_reel(ReelMeta(name="x"))
+
+
+def test_a_second_new_reel_is_refused_until_the_first_has_been_applied(tmp_path, monkeypatch):
+    r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
+    seen = []
+
+    def new_reel(meta):
+        seen.append(r._pending_job)  # still the job being applied, so a second request is refused
+
+    monkeypatch.setattr(r.machine, "new_reel", new_reel)
+    from wpcap.runner import _NewReelJob
+
+    job = _NewReelJob(ReelMeta())
+    r._pending_job = job
+    r._apply(job)
+    assert seen == [job] and r._pending_job is None and job.done.is_set()

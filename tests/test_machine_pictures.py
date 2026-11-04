@@ -172,3 +172,36 @@ def test_set_delay_refused_when_shut_down(tmp_path):
     rig.machine.shutdown()
     with pytest.raises(RuntimeError, match="shut down"):
         rig.machine.set_delay_ms(50.0)
+
+
+def test_new_reel_clears_the_last_saved_picture_and_the_old_reels_counts(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
+    rig.machine.stop()
+    assert rig.machine.last_saved() is not None and rig.machine.status().frames_saved > 0
+    rig.machine.new_reel(ReelMeta())
+    st = rig.machine.status()
+    assert rig.machine.last_saved() is None
+    assert st.reel_name is None and st.frames_saved == st.frames_failed == st.frames_pending == 0
+    assert st.clicks == 0
+
+
+def test_run_realtime_after_a_stall_closes_each_overdue_switch_at_its_own_time(
+    tmp_path, monkeypatch
+):
+    import wpcap.sim.rig as rig_module
+
+    film = SimFilm(frames=50, start_ns=0)
+    rig = SimRig(cfg(tmp_path), film)
+    closed = []
+    real_close = rig.box.close_switch
+    monkeypatch.setattr(
+        rig.box, "close_switch", lambda: (closed.append(rig.clock.now_ns()), real_close())
+    )
+    first_three = film.switch_times()[:3]
+    stall_ns = first_three[-1] + 1_000_000
+    wall = iter([0, stall_ns])  # the start, then one look at a wall clock that jumped
+    monkeypatch.setattr(rig_module.time, "perf_counter_ns", lambda: next(wall))
+    rig.run_realtime(stall_ns / 1e9)
+    assert closed == first_three
