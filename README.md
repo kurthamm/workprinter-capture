@@ -1,35 +1,26 @@
 # WorkPrinter Capture
 
-Independent open-source-oriented reconstruction of the CineCap/DodCap-style capture workflow for **two existing MovieStuff WorkPrinter machines**, believed to be WorkPrinter XP. **Silent Regular 8mm and Super 8 only.**
+Free, modern replacement for **CineCap**, the obsolete capture program for MovieStuff **WorkPrinter** 8mm film transfer machines. It turns a WorkPrinter into an automated film scanner. Built and tested first on the WorkPrinter XP.
 
-**Status: requirements and design, not functioning software.** No projector, camera, modified mouse, Pico adapter, or archive output has been tested here.
+Independent project; not affiliated with MovieStuff or AlternaWare.
 
-## Documentation (start here)
-1. [Project history and decisions](docs/01-HISTORY-AND-DECISIONS.md)
-2. [Historical workflow and sources](docs/02-ORIGINAL-WORKFLOW.md)
-3. [Complete architecture and component interfaces](docs/03-ARCHITECTURE.md)
-4. [Requirements](docs/04-REQUIREMENTS.md)
-5. [Hardware, Pico wiring and bill of materials](docs/05-HARDWARE.md)
-6. [Media quality and archival policy](docs/06-VIDEO-AND-ARCHIVING.md)
-7. [Testing and acceptance plan](docs/07-TESTING.md)
-8. [Build milestones and engineering practices](docs/08-IMPLEMENTATION.md)
-9. [Open questions, risks and verification ledger](docs/09-OPEN-QUESTIONS.md)
-10. [Reference links](docs/10-REFERENCES.md)
+## How it works
 
-## Planned implementation
-- **Windows 11 x64 / C# / .NET 10 / WPF/MVVM** desktop program.
-- Video: Media Foundation for verified camera/capture hardware; pluggable adapters where necessary.
-- Trigger: **Raspberry Pi Pico 2 H, Pico SDK C/C++ firmware, USB serial**, with original modified mouse supported as fallback/diagnostic.
-- Pipeline: continuous preview -> calibrated synchronization -> one saved image per valid physical film frame -> lossless image sequence -> FFV1/Matroska archival master and H.264/MP4 viewing copy through FFmpeg.
-- Separate profiles for both WorkPrinters, initially **one active at a time**.
-- **No audio path**: all reels in scope are silent.
-- Preserve raw-as-received decoded images without destructive corrections; nondestructive crop/rotation/color settings only for exports.
+- **One Windows PC** runs everything: it takes the camcorder's live video, saves one full-quality picture for every film frame, stores the reels, makes the movies and runs the web page. One PC handles two WorkPrinters.
+- On each WorkPrinter, a small **USB sync box** (Raspberry Pi Pico 2) plugs into the WorkPrinter's sync socket, where the old syncmouse went. Nothing inside the WorkPrinter is changed. A modern **camcorder** sits where the old one did and feeds live video over HDMI. Both plug into the PC.
+- You run everything from **a web browser on any phone, tablet or laptop**.
 
-## Safety
-Never wire the unknown WorkPrinter RCA sync jack directly to the Pico GPIO until its actual electrical characteristics are verified. A Pico GPIO is 3.3 V logic and **not 5 V tolerant**. Details in hardware documentation.
+Load the film, start the WorkPrinter and walk away. Recording starts by itself with the first frame, and every frame is counted. At the end of the reel, or if anything goes wrong, it sounds an alarm on the web page, and can also send an alert to your phone (optional; set up during installation). Then press Create Movie: MP4, lossless archive (FFV1) or ProRes, at 16, 18, 24 fps or any speed.
 
-## License
-A public repository is not automatically open-source licensed. Choose and add a LICENSE file before describing redistribution rights.
+## The whole process
 
-## Provenance
-This repository documents user-reported hardware and historical observations, and proposed engineering requirements. Where the original proprietary software specifications or machine pinout have not been obtained, the documentation explicitly says so.
+Scanning is stage one. The same PC then runs **DaVinci Resolve** (free) to stabilize, clean up and color-restore the film, put reels in order and add music and narration, and finally delivers **MP4 files** (USB stick, home server) and **DVDs** for relatives. See `DECISIONS.md` section 12.
+
+## Status
+
+Capture core built and tested (Python, simulated camera and sync box; 163 tests). Next: the web page, then the Pico firmware and the Windows camera backend. Run the simulator with `python -m wpcap demo --reels DIR --frames N`.
+
+- `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md` — version 1 design spec (one Windows PC + USB sync boxes)
+- `DECISIONS.md` — research (including MovieStuff's archived instructions) and every decision
+- `HARDWARE.md` — agreed parts list and purchase tracker
+- `WorkPrinter_Windows_Requirements_v2.md` — the owner's original requirements document (partly superseded)
