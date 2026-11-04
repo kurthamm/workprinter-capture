@@ -102,9 +102,10 @@ def cmd_init_config(args: argparse.Namespace) -> int:
     if out.exists():
         print(f"{out} already exists; remove it first", file=sys.stderr)
         return 2
-    certs = Path(args.certs)
+    # Absolute paths in the config: the service may run from another working directory.
+    certs = Path(args.certs).resolve()
     pw = args.password if args.password is not None else _ask_password()
-    reels = Path(args.reels)
+    reels = Path(args.reels).resolve()
     for n in ("WorkPrinter 1", "WorkPrinter 2"):
         (reels / n).mkdir(parents=True, exist_ok=True)
     try:

@@ -267,3 +267,18 @@ def test_stop_signals_cover_every_signal_uvicorn_reraises():
     assert set(uvicorn.server.HANDLED_SIGNALS) <= set(stop_signals())
     if sys.platform == "win32":
         assert signal.SIGBREAK in stop_signals()
+
+
+def test_init_config_writes_absolute_paths_from_relative_arguments(tmp_path):
+    r = subprocess.run(
+        [sys.executable, "-m", "wpcap", "init-config", "--out", "wpcap.toml", "--reels", "reels",
+         "--certs", "certs", "--password", "pw"],
+        capture_output=True, text=True, timeout=60, cwd=tmp_path,
+    )
+    assert r.returncode == 0, r.stderr
+    cfg = load_config(tmp_path / "wpcap.toml")
+    assert [m.reel_root for m in cfg.machines] == [
+        (tmp_path / "reels" / "WorkPrinter 1").resolve(),
+        (tmp_path / "reels" / "WorkPrinter 2").resolve(),
+    ]
+    assert cfg.server.cert_file == (tmp_path / "certs" / "wpcap.crt").resolve()

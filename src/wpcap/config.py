@@ -126,13 +126,23 @@ def _typed(sec: dict, where: str, key: str, typ: type) -> object:
     return v
 
 
+def _nonempty(sec: dict, where: str, key: str) -> str:
+    v = _typed(sec, where, key, str)
+    if not v.strip():
+        raise ConfigError(f"{where}.{key} must not be empty")
+    return v
+
+
 def _server(data: dict) -> ServerConfig:
     s = _section(data, "server", _SERVER_KEYS)
     port = _typed(s, "server", "port", int)
     if not 1 <= port <= 65535:
         raise ConfigError(f"server.port out of range: {port}")
-    for k in ("host", "password_hash", "secret", "cert_file", "key_file"):
+    for k in ("password_hash", "secret"):
         _typed(s, "server", k, str)
+    # An empty path would mean the working directory: a service's is not the operator's.
+    for k in ("host", "cert_file", "key_file"):
+        _nonempty(s, "server", k)
     if _parse_hash(s["password_hash"]) is None:
         raise ConfigError(
             "server.password_hash is not a valid scrypt hash (run: wpcap hash-password)"
@@ -154,7 +164,7 @@ def _ntfy(data: dict) -> NtfyConfig | None:
         return None
     n = _section(data, "ntfy", _NTFY_KEYS)
     _typed(n, "ntfy", "url", str)
-    _typed(n, "ntfy", "topic", str)
+    _nonempty(n, "ntfy", "topic")
     if not n["url"].startswith(("http://", "https://")):
         raise ConfigError(f"ntfy.url must start with http:// or https://, got {n['url']!r}")
     return NtfyConfig(url=n["url"].rstrip("/"), topic=n["topic"])
@@ -190,10 +200,15 @@ def _machine(i: int, m: object) -> MachineSpec:
     sim_frames = _typed(m, where, "sim_frames", int)
     if sim_frames < 1:
         raise ConfigError(f"{where}.sim_frames must be at least 1")
+    # Relative would resolve against the working directory, which for a Windows service is
+    # C:\Windows\System32: reels on the wrong disk.
+    reel_root = Path(_nonempty(m, where, "reel_root"))
+    if not reel_root.is_absolute():
+        raise ConfigError(f"{where}.reel_root must be an absolute path, got {str(reel_root)!r}")
     return MachineSpec(
         name=name,
         kind=kind,
-        reel_root=Path(_typed(m, where, "reel_root", str)),
+        reel_root=reel_root,
         delay_ms=delay_ms,
         debounce_us=debounce_us,
         film_type=film_type,
@@ -234,6 +249,9 @@ def load_config(path: Path) -> AppConfig:
 def sample_config(
     password_hash: str, reel_root: Path, cert_file: Path, key_file: Path, secret: str
 ) -> str:
+    for what, p in (("reel_root", reel_root), ("cert_file", cert_file), ("key_file", key_file)):
+        if not p.is_absolute():
+            raise ValueError(f"{what} must be an absolute path, got {str(p)!r}")
     r1, r2 = (reel_root / "WorkPrinter 1").as_posix(), (reel_root / "WorkPrinter 2").as_posix()
     return f'''# WorkPrinter Capture configuration. Edit, then: wpcap serve --config wpcap.toml
 [server]

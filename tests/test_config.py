@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import pytest
@@ -161,3 +162,39 @@ def test_malformed_password_hash_rejected_at_load(tmp_path):
     for broken in ("scrypt$zz$zz", "scrypt$00$00", bad + "$x"):
         with pytest.raises(ConfigError, match="server.password_hash"):
             load_config(write(tmp_path, good(tmp_path, ph=broken)))
+
+
+@pytest.mark.parametrize(
+    "field, line",
+    [
+        ("server.host", 'host = ""'),
+        ("server.cert_file", 'cert_file = ""'),
+        ("server.key_file", 'key_file = "  "'),
+        ("machine[0].reel_root", 'reel_root = ""'),
+    ],
+)
+def test_empty_strings_rejected_naming_the_field(tmp_path, field, line):
+    key = line.split(" ")[0]
+    lines = good(tmp_path).splitlines()
+    i = next(i for i, x in enumerate(lines) if x.startswith(key + " "))
+    lines[i] = line
+    with pytest.raises(ConfigError, match=re.escape(field)):
+        load_config(write(tmp_path, "\n".join(lines)))
+
+
+def test_empty_ntfy_topic_rejected(tmp_path):
+    text = good(tmp_path) + '\n[ntfy]\nurl = "http://127.0.0.1:2586"\ntopic = ""\n'
+    with pytest.raises(ConfigError, match="ntfy.topic"):
+        load_config(write(tmp_path, text))
+
+
+def test_relative_reel_root_rejected(tmp_path):
+    with pytest.raises(ConfigError, match=r"machine\[1\].reel_root must be an absolute path"):
+        load_config(write(tmp_path, good(tmp_path, reels2="reels/two")))
+
+
+def test_sample_config_needs_absolute_paths(tmp_path):
+    with pytest.raises(ValueError, match="reel_root"):
+        sample_config(
+            hash_password("pw"), Path("reels"), tmp_path / "c", tmp_path / "k", new_secret()
+        )
