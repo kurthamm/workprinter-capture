@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import getpass
 import signal
 import sys
@@ -18,7 +19,14 @@ from wpcap.service import Service, ServiceError
 from wpcap.sim.camera import is_blurred
 from wpcap.sim.film import SimFilm
 from wpcap.sim.rig import SimRig
-from wpcap.tls import local_names, make_local_ca, make_server_cert
+from wpcap.tls import (
+    RENEW_WITHIN,
+    local_names,
+    make_local_ca,
+    make_server_cert,
+    renew_server_cert,
+    server_cert_not_after,
+)
 
 S = 1_000_000_000
 
@@ -146,6 +154,25 @@ def cmd_gen_cert(args: argparse.Namespace) -> int:
     return 0
 
 
+def renew_cert_if_expiring(cert_file: Path, key_file: Path) -> None:
+    """A server certificate expiring within RENEW_WITHIN is renewed from the local CA next to
+    it; without that CA the operator is warned and the service still starts."""
+    not_after = server_cert_not_after(cert_file)
+    if not_after - dt.datetime.now(dt.UTC) > RENEW_WITHIN:
+        return
+    ca_crt, ca_key = cert_file.parent / "ca.crt", cert_file.parent / "ca.key"
+    if not (ca_crt.exists() and ca_key.exists()):
+        print(
+            f"warning: the certificate {cert_file} expires {not_after:%Y-%m-%d %H:%M} UTC and "
+            f"there is no CA ({ca_crt}, {ca_key}) to renew it; the page will stop working "
+            f"then. Make a new one with: wpcap gen-cert --replace --certs {cert_file.parent}",
+            file=sys.stderr,
+        )
+        return
+    new_after = renew_server_cert(ca_crt, ca_key, cert_file, key_file)
+    print(f"renewed certificate, valid until {new_after:%Y-%m-%d}", flush=True)
+
+
 def stop_signals() -> tuple[signal.Signals, ...]:
     """The signals uvicorn turns into a graceful shutdown (and re-raises afterwards)."""
     sigs = (signal.SIGINT, signal.SIGTERM)
@@ -173,6 +200,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         if not p.exists():
             print(f"certificate file not found: {p} (run: wpcap gen-cert)", file=sys.stderr)
             return 2
+    renew_cert_if_expiring(config.server.cert_file, config.server.key_file)
     service = Service(config)
     try:
         service.start()

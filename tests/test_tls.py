@@ -25,7 +25,9 @@ def test_ca_and_server_cert_chain_and_names(tmp_path):
     ca.public_key().verify(
         cert.signature, cert.tbs_certificate_bytes, cert.signature_algorithm_parameters
     )
-    assert cert.not_valid_after_utc - dt.datetime.now(dt.UTC) > dt.timedelta(days=3600)
+    # Apple devices refuse server certificates valid for more than 825 days
+    valid = cert.not_valid_after_utc - cert.not_valid_before_utc
+    assert dt.timedelta(days=800) < valid <= dt.timedelta(days=825)
     # the private key is readable by the TLS stack
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(crt, key)
@@ -58,3 +60,48 @@ def test_local_names_include_hostname_and_localhost():
     hosts, ips = local_names()
     assert "localhost" in hosts and len(hosts) >= 2
     assert all(ip.count(".") == 3 for ip in ips)
+
+
+def _san(crt):
+    cert = x509.load_pem_x509_certificate(crt.read_bytes())
+    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    return set(san.get_values_for_type(x509.DNSName)), {
+        str(ip) for ip in san.get_values_for_type(x509.IPAddress)
+    }
+
+
+def test_serve_renews_a_certificate_expiring_soon(tmp_path, capsys):
+    from wpcap.__main__ import renew_cert_if_expiring
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+    crt, key = tmp_path / "wpcap.crt", tmp_path / "wpcap.key"
+    make_server_cert(ca_crt, ca_key, crt, key, ["scanpc", "localhost"], ["10.0.0.5"], days=10)
+    names = _san(crt)
+    renew_cert_if_expiring(crt, key)
+    out = capsys.readouterr().out
+    assert "renewed certificate, valid until" in out
+    cert = x509.load_pem_x509_certificate(crt.read_bytes())
+    assert cert.not_valid_after_utc - dt.datetime.now(dt.UTC) > dt.timedelta(days=800)
+    assert _san(crt) == names
+    ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(crt, key)  # key matches cert
+    assert sorted(p.name for p in tmp_path.iterdir()) == [
+        "ca.crt", "ca.key", "wpcap.crt", "wpcap.key"
+    ]
+    # a fresh certificate is left alone
+    before = crt.read_bytes()
+    renew_cert_if_expiring(crt, key)
+    assert crt.read_bytes() == before and capsys.readouterr().out == ""
+
+
+def test_serve_warns_when_no_ca_can_renew_the_certificate(tmp_path, capsys):
+    from wpcap.__main__ import renew_cert_if_expiring
+
+    ca_dir, certs = tmp_path / "ca", tmp_path / "certs"
+    ca_crt, ca_key = make_local_ca(ca_dir)
+    crt, key = certs / "wpcap.crt", certs / "wpcap.key"
+    make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [], days=10)
+    before = crt.read_bytes()
+    renew_cert_if_expiring(crt, key)
+    err = capsys.readouterr().err
+    assert "wpcap gen-cert --replace" in err and str(crt) in err
+    assert crt.read_bytes() == before

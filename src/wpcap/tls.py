@@ -13,6 +13,11 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
 
+# Apple devices refuse TLS server certificates valid for more than 825 days, even from a
+# user-installed CA, so the server certificate is short-lived and renewed by `serve`.
+SERVER_CERT_DAYS = 825
+RENEW_WITHIN = dt.timedelta(days=30)
+
 
 def _write_private(path: Path, key: ec.EllipticCurvePrivateKey) -> None:
     if path.exists():
@@ -73,14 +78,15 @@ def make_server_cert(
     out_key: Path,
     hostnames: list[str],
     ips: list[str],
-    days: int = 3650,
+    days: int = SERVER_CERT_DAYS,
 ) -> None:
     if out_cert.exists() or out_key.exists():
         raise FileExistsError(f"{out_cert} or {out_key} already exists")
     ca = x509.load_pem_x509_certificate(ca_cert.read_bytes())
     signer = serialization.load_pem_private_key(ca_key.read_bytes(), password=None)
     key = ec.generate_private_key(ec.SECP256R1())
-    now = dt.datetime.now(dt.UTC)
+    # Apple counts validity from notBefore, so `days` is measured from there.
+    start = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)
     names: list[x509.GeneralName] = [x509.DNSName(h) for h in hostnames]
     names += [x509.IPAddress(ipaddress.ip_address(ip)) for ip in ips]
     cert = (
@@ -89,8 +95,8 @@ def make_server_cert(
         .issuer_name(ca.subject)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(now - dt.timedelta(minutes=5))
-        .not_valid_after(now + dt.timedelta(days=days))
+        .not_valid_before(start)
+        .not_valid_after(start + dt.timedelta(days=days))
         .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
         .add_extension(x509.SubjectAlternativeName(names), critical=False)
         .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
@@ -102,6 +108,31 @@ def make_server_cert(
     out_cert.parent.mkdir(parents=True, exist_ok=True)
     _write_private(out_key, key)
     _write_cert(out_cert, cert)
+
+
+def server_cert_not_after(cert_file: Path) -> dt.datetime:
+    return x509.load_pem_x509_certificate(cert_file.read_bytes()).not_valid_after_utc
+
+
+def renew_server_cert(ca_cert: Path, ca_key: Path, cert_file: Path, key_file: Path) -> dt.datetime:
+    """Replace the server certificate and key with new ones for the same names, signed by the
+    CA. The new pair is written under temporary names first, so a failure leaves the old pair
+    in place. Returns the new certificate's expiry."""
+    old = x509.load_pem_x509_certificate(cert_file.read_bytes())
+    san = old.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    hosts = list(san.get_values_for_type(x509.DNSName))
+    ips = [str(ip) for ip in san.get_values_for_type(x509.IPAddress)]
+    if not hosts:
+        raise ValueError(f"{cert_file} names no host; make a new one with wpcap gen-cert")
+    new_cert = cert_file.with_name(cert_file.name + ".new")
+    new_key = key_file.with_name(key_file.name + ".new")
+    # Left by a renewal interrupted before its replace: never in use, safe to remove.
+    new_cert.unlink(missing_ok=True)
+    new_key.unlink(missing_ok=True)
+    make_server_cert(ca_cert, ca_key, new_cert, new_key, hosts, ips)
+    os.replace(new_key, key_file)
+    os.replace(new_cert, cert_file)
+    return server_cert_not_after(cert_file)
 
 
 def local_names() -> tuple[list[str], list[str]]:
