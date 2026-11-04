@@ -57,8 +57,10 @@ class SimRig:
         """Thread new film: the camera renders it and the switch follows its timing. Call only
         between reels (the machine must not be recording).
         Call from the thread that steps the rig."""
+        # Computed before any state changes: a failure leaves the old film threaded.
+        switch_times = film.switch_times()
         self.camera.load_film(film)
-        self.switch_times = film.switch_times()
+        self.switch_times = switch_times
         self._next_switch = 0
 
     def _step(self) -> None:

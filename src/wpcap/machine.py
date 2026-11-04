@@ -750,6 +750,7 @@ class Machine:
     def _detach_reel(self) -> tuple[Saver | None, Accounting, Journal | None]:
         """Under the lock: close the open reel; return its saver, accounting and journal."""
         self._replace_picker("reel closed")
+        self._click_times.clear()
         self._cal_window = []
         self._cal_delay_ms = None
         self._inflight_pictures = {}

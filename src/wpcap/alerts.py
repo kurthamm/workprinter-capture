@@ -129,6 +129,7 @@ class AlertBus:
         self._fq: queue.Queue[Alert | None] = queue.Queue(maxsize=100)
         self._fthread: threading.Thread | None = None
         self._fclosed = False
+        self._sending = 0  # 1 while the forwarder thread is delivering an alert
         self.forward_dropped = 0
 
     def for_machine(self, name: str) -> Alerter:
@@ -214,10 +215,13 @@ class AlertBus:
             a = self._fq.get()
             if a is None:
                 return
+            self._sending = 1
             try:
                 self._forward.alert(a.level, a.title, a.message)
             except Exception as e:  # noqa: BLE001 - delivery failure must never reach capture
                 self._complain(str(e), a.machine)
+            finally:
+                self._sending = 0
 
     def close(
         self, timeout_s: float = 5.0, per_alert_s: float = 3.5, max_wait_s: float = 60.0
@@ -236,10 +240,11 @@ class AlertBus:
         except queue.Full as e:
             raise TimeoutError(
                 f"alert forwarder did not accept the stop sentinel; "
-                f"{self._fq.qsize()} phone alerts undelivered"
+                f"{self._fq.qsize() + self._sending} phone alerts undelivered"
             ) from e
         t.join(max(0.0, deadline - time.monotonic()))
         if t.is_alive():
             raise TimeoutError(
-                f"alert forwarder did not stop; {self._fq.qsize()} phone alerts undelivered"
+                f"alert forwarder did not stop; "
+                f"{max(0, self._fq.qsize() - 1) + self._sending} phone alerts undelivered"
             )

@@ -141,3 +141,22 @@ def test_a_second_new_reel_is_refused_until_the_first_has_been_applied(tmp_path,
     r._pending_job = job
     r._apply(job)
     assert seen == [job] and r._pending_job is None and job.done.is_set()
+
+
+def test_new_reel_leaves_the_machine_unchanged_when_the_film_cannot_be_made(tmp_path):
+    r = SimRunner(spec(tmp_path, frames=30), AlertBus().for_machine("WorkPrinter 1"))
+    r.start()
+    try:
+        assert wait_for(lambda: r.machine.status().state == MachineState.REEL_FINISHED, 20)
+        first = r.machine.reel.path
+
+        def no_film(now_ns):
+            raise ValueError("no film")
+
+        r._film = no_film
+        with pytest.raises(ValueError, match="no film"):
+            r.new_reel(ReelMeta(name="Second"))
+        assert r.machine.reel.path == first
+        assert r.machine.status().state == MachineState.REEL_FINISHED and r.error is None
+    finally:
+        r.stop()

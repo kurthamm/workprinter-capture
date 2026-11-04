@@ -209,6 +209,7 @@ def test_sim_frames_below_what_the_gate_needs_rejected(tmp_path):
 @pytest.mark.parametrize(
     "url, topic",
     [("http://", "wp"), ("https:///x", "wp"), ("http://h:2586", "alerts#test"),
+     ("http://h:2586/base?token=x", "wp"), ("http://h:2586/#top", "wp"),
      ("http://h:2586", "a/b"), ("http://h:2586", "a b"), ("http://h:2586", "a?b")],
 )
 def test_incomplete_ntfy_url_or_delimiter_in_topic_rejected(tmp_path, url, topic):

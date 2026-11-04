@@ -171,6 +171,8 @@ def _ntfy(data: dict) -> NtfyConfig | None:
     _nonempty(n, "ntfy", "topic")
     if not n["url"].startswith(("http://", "https://")):
         raise ConfigError(f"ntfy.url must start with http:// or https://, got {n['url']!r}")
+    if "?" in n["url"] or "#" in n["url"]:
+        raise ConfigError(f"ntfy.url must not contain ? or #: {n['url']!r}")
     try:
         host = urlsplit(n["url"]).hostname
     except ValueError as e:

@@ -292,3 +292,23 @@ def test_forwarded_alerts_are_queued_while_the_id_lock_is_held():
     bus.for_machine("m").alert("problem", "x", "")
     bus.close()
     assert held == [True]
+
+
+def test_close_error_counts_the_alert_being_sent():
+    release = threading.Event()
+    started = threading.Event()
+
+    class Stuck:
+        def alert(self, level, title, message):
+            started.set()
+            release.wait(30)
+
+    bus = AlertBus(forward=Stuck())
+    bus.for_machine("m").alert("problem", "p0", "")
+    assert started.wait(5)  # p0 left the queue and is in flight
+    bus.for_machine("m").alert("problem", "p1", "")
+    try:
+        with pytest.raises(TimeoutError, match=r"\b2 phone alerts undelivered"):
+            bus.close(timeout_s=0.2, per_alert_s=0.1)
+    finally:
+        release.set()

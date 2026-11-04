@@ -99,8 +99,10 @@ class SimRunner:
         the fresh film is threaded with no step in between, so a switch of the old film cannot
         open the new reel."""
         try:
+            # Built first: if the film cannot be made, the machine is left as it was.
+            film = self._film(self.rig.clock.now_ns())
             self.machine.new_reel(job.meta)
-            self.rig.load_film(self._film(self.rig.clock.now_ns()))
+            self.rig.load_film(film)
         except Exception as e:  # noqa: BLE001 - handed to the caller of new_reel, who raises it
             job.error = e
         finally:
