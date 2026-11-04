@@ -1,1 +1,89 @@
-<!doctype html><title>WorkPrinter Capture</title><p>page comes in Task 8</p>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WorkPrinter Capture</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>WorkPrinter Capture</h1>
+  <div id="conn" class="conn">connecting…</div>
+  <div class="header-buttons">
+    <button id="silence" class="danger hidden">Silence alarm</button>
+    <button id="notify">Enable notifications</button>
+    <button id="logout" class="hidden">Log out</button>
+  </div>
+</header>
+
+<section id="login" class="login hidden">
+  <form id="login-form">
+    <label>Password <input id="password" type="password" autocomplete="current-password" autofocus></label>
+    <button type="submit">Log in</button>
+    <div id="login-error" class="error"></div>
+  </form>
+</section>
+
+<main id="machines"></main>
+
+<section id="alerts-panel">
+  <h2>Alerts</h2>
+  <ul id="alerts"></ul>
+</section>
+
+<footer id="pc"></footer>
+
+<template id="machine-card">
+  <article class="card" data-state="">
+    <div class="card-head">
+      <h2 class="name"></h2>
+      <div class="status"></div>
+    </div>
+    <div class="fault hidden"><b class="fault-message"></b><br><span class="fault-action"></span></div>
+    <div class="pictures">
+      <figure><img class="live" alt="live camera"><figcaption>Live</figcaption></figure>
+      <figure><img class="last" alt="last saved frame"><figcaption>Last saved <span class="last-n"></span></figcaption></figure>
+    </div>
+    <dl class="counters">
+      <dt>Reel</dt><dd class="reel"></dd>
+      <dt>Segment</dt><dd class="segment"></dd>
+      <dt>Saved</dt><dd class="saved"></dd>
+      <dt>Failed</dt><dd class="failed"></dd>
+      <dt>Pending</dt><dd class="pending"></dd>
+      <dt>Clicks</dt><dd class="clicks"></dd>
+      <dt>Bounces</dt><dd class="bounces"></dd>
+      <dt>Frames/s</dt><dd class="fps"></dd>
+      <dt>Feet</dt><dd class="feet"></dd>
+      <dt>Movie (18 fps)</dt><dd class="length"></dd>
+      <dt>Free</dt><dd class="free"></dd>
+      <dt>Sync error</dt><dd class="sync"></dd>
+      <dt>Delay</dt><dd class="delay"></dd>
+    </dl>
+    <ul class="warnings"></ul>
+    <div class="buttons">
+      <button class="new-reel">New Reel</button>
+      <button class="stop danger">Stop</button>
+      <button class="resume">Resume</button>
+      <button class="calibrate">Calibrate</button>
+    </div>
+    <form class="new-reel-form hidden">
+      <label>Name <input name="name" placeholder="(machine and date if empty)"></label>
+      <label>Film <select name="film_type"><option value="super8">Super 8</option><option value="regular8">Regular 8</option></select></label>
+      <label>Customer <input name="customer"></label>
+      <label>Job number <input name="job_number"></label>
+      <label>Notes <input name="notes"></label>
+      <button type="submit">Start reel</button> <button type="button" class="cancel">Cancel</button>
+      <div class="error"></div>
+    </form>
+    <div class="calibration hidden">
+      <p>Pick the sharpest picture. The delay becomes the current delay plus that picture's offset.</p>
+      <div class="strip"></div>
+      <div class="error"></div>
+    </div>
+  </article>
+</template>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
