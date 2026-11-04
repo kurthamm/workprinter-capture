@@ -148,6 +148,16 @@ def test_stop_resume_and_new_reel_flow(client, svc, film_frames):
     assert r.status_code == 200 and r.json()["reel"] == "Smith job 12 reel 3", r.json()
     assert wait_for(lambda: m.status().state == MachineState.RECORDING, 15)  # fresh sim film
     assert m.reel.read_reel_json()["customer"] == "Smith"
+    # feet follow the reel's film type (Regular 8: 80 frames a foot), not the config's Super 8
+    shown: list[dict] = []
+
+    def telling_apart() -> bool:  # a frame count whose feet differ between the film types
+        shown[:] = [client.get("/api/status").json()["machines"][0]]
+        n = shown[0]["saved"]
+        return round(n / 80, 1) != round(n / 72, 1)
+
+    assert wait_for(telling_apart, 20)
+    assert shown[0]["feet"] == round(shown[0]["saved"] / 80, 1), shown[0]
 
 
 def test_new_reel_bad_name_is_400(client, svc, monkeypatch):

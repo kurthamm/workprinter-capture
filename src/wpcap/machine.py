@@ -111,6 +111,7 @@ class MachineStatus:
     free_bytes: int | None  # None: the reel drive is not there
     last_fault: Fault | None
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    reel_film_type: str | None = None  # the open reel's film type (chosen in New Reel)
 
 
 def _free_bytes(path: Path) -> int:
@@ -139,6 +140,7 @@ class Machine:
         self._lock = threading.RLock()
         self.state = MachineState.NOT_READY
         self.reel: ReelFolder | None = None
+        self.reel_film_type: str | None = None  # as written to the open reel's reel.json
         self._journal: Journal | None = None
         self._saver: Saver | None = None
         self._reel_token: object | None = None
@@ -688,22 +690,21 @@ class Machine:
         name = meta.name or f"{self.config.name} — {self._wall_clock().strftime('%Y-%m-%d %H%M')}"
         reel = ReelFolder.create(self.config.reel_root, name)
         info = self._camera.info()
-        reel.write_reel_json(
-            {
-                "name": reel.name,
-                "machine": self.config.name,
-                "film_type": meta.film_type,
-                "notes": meta.notes,
-                "customer": meta.customer,
-                "job_number": meta.job_number,
-                "created": self._wall_clock().isoformat(timespec="seconds"),
-                "camera": asdict(info),
-                "delay_ms": self.config.delay_ms,
-                "debounce_us": self.config.debounce_us,
-                "sync_box_serial": self.link.serial,
-                "sync_box_fw": self.link.fw_version,
-            }
-        )
+        data = {
+            "name": reel.name,
+            "machine": self.config.name,
+            "film_type": meta.film_type,
+            "notes": meta.notes,
+            "customer": meta.customer,
+            "job_number": meta.job_number,
+            "created": self._wall_clock().isoformat(timespec="seconds"),
+            "camera": asdict(info),
+            "delay_ms": self.config.delay_ms,
+            "debounce_us": self.config.debounce_us,
+            "sync_box_serial": self.link.serial,
+            "sync_box_fw": self.link.fw_version,
+        }
+        reel.write_reel_json(data)
         journal = Journal(reel.journal_path)
         accounting = Accounting()
         token = object()
@@ -719,6 +720,7 @@ class Machine:
         saver.start()
         self.reel, self._journal, self.accounting, self._saver = reel, journal, accounting, saver
         self._reel_token = token
+        self.reel_film_type = data["film_type"]
         self.segment = 1
         self._next_frame = 1
         self._gate.reset()
@@ -742,6 +744,7 @@ class Machine:
         self._inflight_pictures = {}
         saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
+        self.reel_film_type = None
         self._journal = None
         self._saver = None
         self.segment = 0
@@ -831,4 +834,5 @@ class Machine:
                 free_bytes=self._free(),
                 last_fault=self.fault_history[-1] if self.fault_history else None,
                 warnings=tuple(self.warnings[-5:]),
+                reel_film_type=self.reel_film_type,
             )

@@ -132,7 +132,9 @@ class Service:
             if r is None:
                 continue
             st = r.machine.status()
-            per_foot = FRAMES_PER_FOOT[spec.film_type]
+            # The open reel's film type (chosen in New Reel) decides; before one, the config's.
+            film_type = spec.film_type if st.reel_name is None else st.reel_film_type
+            per_foot = FRAMES_PER_FOOT[film_type]
             machines.append(
                 {
                     "name": spec.name,

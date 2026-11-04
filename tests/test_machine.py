@@ -627,3 +627,17 @@ def test_rig_alerts_need_a_recording_alerter(tmp_path):
     rig = SimRig(cfg(tmp_path), SimFilm(frames=0, start_ns=10 * S), alerter=Quiet())
     with pytest.raises(TypeError, match="RecordingAlerter"):
         _ = rig.alerts
+
+
+def test_open_reel_film_type_comes_from_new_reel(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path), film)
+    rig.machine.new_reel(ReelMeta(film_type="regular8"))
+    assert rig.machine.status().reel_film_type is None  # no reel until the film moves
+    rig.run_until(3 * S + 5 * film.period_ns)
+    st = rig.machine.status()
+    assert st.state == MachineState.RECORDING and st.reel_film_type == "regular8"
+    assert rig.machine.reel.read_reel_json()["film_type"] == "regular8"
+    rig.machine.stop()
+    rig.machine.new_reel(ReelMeta())
+    assert rig.machine.status().reel_film_type is None
