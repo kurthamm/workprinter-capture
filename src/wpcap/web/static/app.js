@@ -14,20 +14,35 @@ let activeFaults = new Set(); // keys of faults present in the latest status
 
 // ---- API ------------------------------------------------------------------------------------
 
+class LoginRequired extends Error {
+  constructor() { super("login required"); }
+}
+
+// The server's {"error": ...} text for a failed request; a body that is not that (a proxy page,
+// a crash) is logged and reported by its HTTP status.
+async function errorText(r, path) {
+  try {
+    const d = await r.json();
+    if (d && typeof d.error === "string") return d.error;
+    console.error(`${path}: HTTP ${r.status} without an error message`, d);
+  } catch (err) {
+    console.error(`${path}: HTTP ${r.status} with a body that is not JSON`, err);
+  }
+  return `HTTP ${r.status}`;
+}
+
 async function api(path, body) {
   const opts = body === undefined ? {} : {
     method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body),
   };
   const r = await fetch(path, opts);
   if (r.status === 401) {
-    const d = await r.json().catch(() => ({}));
-    if (path === "/api/login") throw new Error(d.error || "wrong password");
+    if (path === "/api/login") throw new Error(await errorText(r, path));
     showLogin(true);
-    throw new Error("login required");
+    throw new LoginRequired();
   }
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-  return data;
+  if (!r.ok) throw new Error(await errorText(r, path));
+  return await r.json();
 }
 
 // ---- login ------------------------------------------------------------------------------------
@@ -200,6 +215,10 @@ function render(snap) {
       $(".fault-action", el).textContent = m.last_fault.action;
     }
     if (problem) faults.add(`${m.name}|${m.last_fault.message}`);
+    // The fault is gone: the same fault coming back later must alarm again.
+    if (["ready", "recording", "not_ready"].includes(state)) {
+      for (const k of [...silencedFaults]) if (k.startsWith(`${m.name}|`)) silencedFaults.delete(k);
+    }
     const set = (cls, v) => { $(`.${cls}`, el).textContent = v; };
     set("reel", m.reel || "—"); set("segment", m.segment); set("saved", m.saved); set("failed", m.failed);
     set("pending", m.pending); set("clicks", m.clicks); set("bounces", m.bounces); set("fps", m.fps.toFixed(1));
@@ -322,4 +341,10 @@ async function calibrate(name, el) {
 
 // ---- start ------------------------------------------------------------------------------------
 
-api("/api/status").then((snap) => { showLogin(false); render(snap); connect(); }).catch(() => {});
+api("/api/status").then((snap) => { showLogin(false); render(snap); connect(); }).catch((err) => {
+  if (err instanceof LoginRequired) return; // the login box is open
+  // Network down or a server error: say so; the once-a-second check keeps trying to connect.
+  console.error("first status request failed:", err);
+  showAlert({level: "warning", title: "Cannot reach the capture program", message: err.message,
+    machine: "page", t: Date.now() / 1000, id: `local-${Date.now()}`});
+});

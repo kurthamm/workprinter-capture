@@ -617,3 +617,13 @@ def test_new_reel_rejects_unknown_film_type(tmp_path):
     rig = SimRig(cfg(tmp_path), SimFilm(frames=30, start_ns=3 * S))
     with pytest.raises(ValueError, match="film_type"):
         rig.machine.new_reel(ReelMeta(film_type="16mm"))
+
+
+def test_rig_alerts_need_a_recording_alerter(tmp_path):
+    class Quiet:
+        def alert(self, level, title, message):
+            pass
+
+    rig = SimRig(cfg(tmp_path), SimFilm(frames=0, start_ns=10 * S), alerter=Quiet())
+    with pytest.raises(TypeError, match="RecordingAlerter"):
+        _ = rig.alerts

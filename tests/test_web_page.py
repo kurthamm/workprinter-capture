@@ -1,6 +1,9 @@
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from test_web_api import app_config  # reuse the fixture helper
 
@@ -56,3 +59,18 @@ def test_page_mentions_every_state_and_the_alarm():
         assert s in js, s
     assert "AudioContext" in js and "Notification" in js
     assert "Silence" in html and "New Reel" in html and "Resume" in html and "Calibrate" in html
+
+
+def test_page_never_swallows_errors_and_forgets_silenced_faults_once_gone():
+    js = (STATIC / "app.js").read_text(encoding="utf-8")
+    assert not re.search(r"catch\(\s*\(\)\s*=>\s*(\{\s*\}|\(\{\s*\}\))\s*\)", js)
+    assert "console.error" in js and "instanceof LoginRequired" in js
+    assert "silencedFaults.delete" in js
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="needs node to parse app.js")
+def test_javascript_parses():
+    r = subprocess.run(
+        ["node", "--check", str(STATIC / "app.js")], capture_output=True, text=True, timeout=30
+    )
+    assert r.returncode == 0, r.stderr

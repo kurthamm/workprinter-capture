@@ -49,7 +49,9 @@ class SimRig:
 
     @property
     def alerts(self) -> list[tuple[str, str, str]]:
-        return getattr(self.alerter, "alerts", [])
+        if not isinstance(self.alerter, RecordingAlerter):
+            raise TypeError("alerts are only recorded by RecordingAlerter")
+        return self.alerter.alerts
 
     def load_film(self, film: SimFilm) -> None:
         """Thread new film: the camera renders it and the switch follows its timing. Call only
