@@ -107,7 +107,12 @@ def make_server_cert(
     )
     out_cert.parent.mkdir(parents=True, exist_ok=True)
     _write_private(out_key, key)
-    _write_cert(out_cert, cert)
+    try:
+        _write_cert(out_cert, cert)
+    except BaseException:
+        # A key without its certificate would make the next attempt fail on "already exists".
+        out_key.unlink(missing_ok=True)
+        raise
 
 
 def server_cert_not_after(cert_file: Path) -> dt.datetime:
@@ -124,6 +129,15 @@ def renew_server_cert(ca_cert: Path, ca_key: Path, cert_file: Path, key_file: Pa
     ips = [str(ip) for ip in san.get_values_for_type(x509.IPAddress)]
     if not hosts:
         raise ValueError(f"{cert_file} names no host; make a new one with wpcap gen-cert")
+    replace_server_cert(ca_cert, ca_key, cert_file, key_file, hosts, ips)
+    return server_cert_not_after(cert_file)
+
+
+def replace_server_cert(
+    ca_cert: Path, ca_key: Path, cert_file: Path, key_file: Path, hosts: list[str], ips: list[str]
+) -> None:
+    """Write a new server certificate and key under temporary names, then move them over the
+    old pair, so a failure (a bad IP, a full disk) leaves the old pair in place."""
     new_cert = cert_file.with_name(cert_file.name + ".new")
     new_key = key_file.with_name(key_file.name + ".new")
     # Left by a renewal interrupted before its replace: never in use, safe to remove.
@@ -132,7 +146,6 @@ def renew_server_cert(ca_cert: Path, ca_key: Path, cert_file: Path, key_file: Pa
     make_server_cert(ca_cert, ca_key, new_cert, new_key, hosts, ips)
     os.replace(new_key, key_file)
     os.replace(new_cert, cert_file)
-    return server_cert_not_after(cert_file)
 
 
 def local_names() -> tuple[list[str], list[str]]:

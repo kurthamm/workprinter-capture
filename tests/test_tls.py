@@ -105,3 +105,18 @@ def test_serve_warns_when_no_ca_can_renew_the_certificate(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "wpcap gen-cert --replace" in err and str(crt) in err
     assert crt.read_bytes() == before
+
+
+def test_failed_certificate_write_removes_the_new_key(tmp_path, monkeypatch):
+    from wpcap import tls
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+
+    def boom(path, cert):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tls, "_write_cert", boom)
+    crt, key = tmp_path / "wpcap.crt", tmp_path / "wpcap.key"
+    with pytest.raises(OSError, match="disk full"):
+        make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [])
+    assert not key.exists() and not crt.exists()

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import getpass
+import ipaddress
 import signal
 import sys
 from pathlib import Path
@@ -25,6 +26,7 @@ from wpcap.tls import (
     make_local_ca,
     make_server_cert,
     renew_server_cert,
+    replace_server_cert,
     server_cert_not_after,
 )
 
@@ -112,12 +114,24 @@ def cmd_init_config(args: argparse.Namespace) -> int:
         ca_crt, ca_key = make_local_ca(certs)
     except FileExistsError:
         ca_crt, ca_key = certs / "ca.crt", certs / "ca.key"
+        if not (ca_crt.exists() and ca_key.exists()):
+            print(
+                f"incomplete CA in {certs}; remove ca.crt and ca.key, then run again",
+                file=sys.stderr,
+            )
+            return 2
     hosts, ips = local_names()
     hosts += [h for h in args.host if h not in hosts]
     ips += [ip for ip in args.ip if ip not in ips]
     crt, key = certs / "wpcap.crt", certs / "wpcap.key"
     if not hosts:
         print("no host names for the certificate", file=sys.stderr)
+        return 2
+    if crt.exists() != key.exists():
+        print(
+            f"{crt} and {key} must both exist; run: wpcap gen-cert --certs {certs} --replace",
+            file=sys.stderr,
+        )
         return 2
     if not crt.exists():
         make_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
@@ -138,19 +152,26 @@ def cmd_gen_cert(args: argparse.Namespace) -> int:
         print(f"no CA at {ca_crt}; run init-config first", file=sys.stderr)
         return 2
     crt, key = certs / "wpcap.crt", certs / "wpcap.key"
-    if crt.exists() or key.exists():
-        if not args.replace:
-            print(f"{crt} exists; pass --replace to make a new one", file=sys.stderr)
-            return 2
-        crt.unlink(missing_ok=True)
-        key.unlink(missing_ok=True)
+    replacing = crt.exists() or key.exists()
+    if replacing and not args.replace:
+        print(f"{crt} exists; pass --replace to make a new one", file=sys.stderr)
+        return 2
     hosts, ips = local_names()
     hosts += [h for h in args.host if h not in hosts]
     ips += [ip for ip in args.ip if ip not in ips]
     if not hosts:
         print("no host names for the certificate", file=sys.stderr)
         return 2
-    make_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
+    for ip in args.ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            print(f"--ip {ip!r} is not an IP address", file=sys.stderr)
+            return 2
+    if replacing:  # the old pair stays until the new one is written
+        replace_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
+    else:
+        make_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
     print(f"wrote {crt} for {', '.join(hosts + ips)}")
     return 0
 
@@ -204,14 +225,16 @@ def cmd_serve(args: argparse.Namespace) -> int:
     renew_cert_if_expiring(config.server.cert_file, config.server.key_file)
     service = Service(config)
     try:
-        service.start()
-    except ServiceError as e:
-        print(f"cannot start: {e}", file=sys.stderr)
-        return 2
-    try:
+        try:
+            service.start()
+        except ServiceError as e:
+            print(f"cannot start: {e}", file=sys.stderr)
+            return 2
         app = create_app(service, config)
         hosts, ips = local_names()
-        for name in hosts + ips:
+        # The server listens on the configured address only; list names that reach it.
+        shown = hosts + ips if config.server.host == "0.0.0.0" else [config.server.host]
+        for name in shown:
             print(f"page: https://{name}:{config.server.port}/")
 
         class Server(uvicorn.Server):

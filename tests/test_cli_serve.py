@@ -282,3 +282,35 @@ def test_init_config_writes_absolute_paths_from_relative_arguments(tmp_path):
         (tmp_path / "reels" / "WorkPrinter 2").resolve(),
     ]
     assert cfg.server.cert_file == (tmp_path / "certs" / "wpcap.crt").resolve()
+
+
+def _init(tmp_path, *extra):
+    return run(
+        "init-config", "--out", str(tmp_path / "wpcap.toml"), "--reels", str(tmp_path / "r"),
+        "--certs", str(tmp_path / "c"), "--password", "pw", *extra,
+    )
+
+
+def test_init_config_reports_an_incomplete_ca(tmp_path):
+    certs = tmp_path / "c"
+    certs.mkdir()
+    (certs / "ca.crt").write_text("x")
+    r = _init(tmp_path)
+    assert r.returncode == 2 and "incomplete CA" in r.stderr and "Traceback" not in r.stderr
+
+
+def test_init_config_reports_a_certificate_without_its_key(tmp_path):
+    assert _init(tmp_path).returncode == 0
+    (tmp_path / "wpcap.toml").unlink()
+    (tmp_path / "c" / "wpcap.key").unlink()
+    r = _init(tmp_path)
+    assert r.returncode == 2 and "must both exist" in r.stderr and "Traceback" not in r.stderr
+
+
+def test_gen_cert_replace_with_a_bad_ip_keeps_the_old_certificate(tmp_path):
+    assert _init(tmp_path).returncode == 0
+    crt, key = tmp_path / "c" / "wpcap.crt", tmp_path / "c" / "wpcap.key"
+    before = crt.read_bytes(), key.read_bytes()
+    r = run("gen-cert", "--certs", str(tmp_path / "c"), "--ip", "not-an-ip", "--replace")
+    assert r.returncode == 2 and "not an IP address" in r.stderr
+    assert (crt.read_bytes(), key.read_bytes()) == before
