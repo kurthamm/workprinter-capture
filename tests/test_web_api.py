@@ -38,8 +38,13 @@ def wait_for(pred, timeout_s):
 
 
 @pytest.fixture
-def svc(tmp_path):
-    s = Service(app_config(tmp_path))
+def film_frames():
+    return 30
+
+
+@pytest.fixture
+def svc(tmp_path, film_frames):
+    s = Service(app_config(tmp_path, frames=film_frames))
     s.start()
     yield s
     s.stop()
@@ -120,7 +125,7 @@ def test_stop_resume_and_new_reel_flow(client, svc):
     assert m.status().state == MachineState.STOPPED
     r = client.post("/api/machines/WorkPrinter 1/resume")
     assert r.status_code == 200
-    assert m.status().state in (MachineState.READY, MachineState.NOT_READY)
+    assert m.status().state != MachineState.STOPPED  # the sim film keeps running
     r = client.post("/api/machines/WorkPrinter 1/resume")
     assert r.status_code == 409 and "resume" in r.json()["error"]
     # the sim film is still running after Resume; a new reel needs the machine stopped
@@ -140,8 +145,11 @@ def test_stop_resume_and_new_reel_flow(client, svc):
     assert m.reel.read_reel_json()["customer"] == "Smith"
 
 
-def test_new_reel_bad_name_is_400(client, svc):
+def test_new_reel_bad_name_is_400(client, svc, monkeypatch):
     login(client)
+    restarts = []
+    runner = svc.runner("WorkPrinter 2")
+    monkeypatch.setattr(runner, "restart_film", lambda: restarts.append(1))
     m = svc.machine("WorkPrinter 2")
     assert wait_for(lambda: m.status().state == MachineState.RECORDING, 15)
     before = m.reel.path
@@ -153,9 +161,15 @@ def test_new_reel_bad_name_is_400(client, svc):
         assert r.status_code == 400, bad
         assert r.json()["error"]
     assert m.reel.path == before and m.status().state == MachineState.STOPPED
+    assert restarts == []
+    r = client.post(
+        "/api/machines/WorkPrinter 2/new-reel", json={"name": "good one", "film_type": "super8"}
+    )
+    assert r.status_code == 200 and restarts == [1]
 
 
-def test_calibration_and_delay(client, svc):
+@pytest.mark.parametrize("film_frames", [200])
+def test_calibration_and_delay(client, svc, film_frames):
     login(client)
     m = svc.machine("WorkPrinter 1")
     assert wait_for(lambda: m.last_saved() is not None, 15)
@@ -232,3 +246,13 @@ def test_to_jpeg_scales_down_only():
     small = np.zeros((108, 192, 3), dtype=np.uint8)
     im = Image.open(io.BytesIO(to_jpeg(small, max_width=640)))
     assert (im.width, im.height) == (192, 108)
+
+
+def test_unknown_route_has_error_body(client):
+    r = client.get("/api/nope")
+    assert r.status_code == 404 and r.json()["error"]
+
+
+def test_non_ascii_cookie_is_401(client):
+    r = client.get("/api/status", headers={"cookie": "wpcap_session=1.é".encode()})
+    assert r.status_code == 401 and r.json() == {"error": "login required"}

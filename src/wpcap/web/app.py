@@ -7,11 +7,14 @@ import json
 import threading
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from wpcap.config import AppConfig, verify_password
 from wpcap.machine import Machine, ReelMeta
@@ -54,11 +57,9 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
         if token is None or not check_token(secret, token, SESSION_DAYS * 86400):
             raise HTTPException(401, "login required")
 
-    @app.exception_handler(HTTPException)
-    async def _http_error(request: Request, exc: HTTPException):
+    @app.exception_handler(StarletteHTTPException)
+    async def _http_error(request: Request, exc: StarletteHTTPException):
         return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
-
-    from fastapi.exceptions import RequestValidationError
 
     @app.exception_handler(RequestValidationError)
     async def _validation_error(request: Request, exc: RequestValidationError):
@@ -77,7 +78,7 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
 
     @app.post("/api/login")
     async def login(body: LoginBody, response: Response):
-        if not verify_password(body.password, config.server.password_hash):
+        if not await asyncio.to_thread(verify_password, body.password, config.server.password_hash):
             await asyncio.sleep(WRONG_PASSWORD_DELAY_S)
             raise HTTPException(401, "wrong password")
         response.set_cookie(
@@ -170,7 +171,10 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
         return {
             "delay_ms": m.config.delay_ms,
             "pictures": [
-                {"offset_ms": off, "url": f"/api/machines/{name}/calibration/{i}.jpg"}
+                {
+                    "offset_ms": off,
+                    "url": f"/api/machines/{quote(name, safe='')}/calibration/{i}.jpg",
+                }
                 for i, (off, _) in enumerate(window)
             ],
         }
@@ -213,9 +217,9 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
         )
 
         def go():
+            m.new_reel(meta)
             if isinstance(runner, SimRunner):
                 runner.restart_film()
-            m.new_reel(meta)
 
         act(go)
         return {"ok": True, "reel": body.name or None}

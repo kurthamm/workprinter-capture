@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import time
 
 COOKIE = "wpcap_session"
 SESSION_DAYS = 30
+_TOKEN_RE = re.compile(r"[0-9]+\.[0-9a-f]+", re.ASCII)
 
 
 def make_token(secret: str, issued: float) -> str:
@@ -17,11 +19,10 @@ def make_token(secret: str, issued: float) -> str:
 
 
 def check_token(secret: str, token: str, max_age_s: float) -> bool:
-    try:
-        stamp, sig = token.split(".")
-        issued = int(stamp)
-    except ValueError:
+    if not _TOKEN_RE.fullmatch(token):
         return False
+    stamp, sig = token.split(".")
+    issued = int(stamp)
     expected = hmac.new(secret.encode(), stamp.encode(), hashlib.sha256).hexdigest()
     if not hmac.compare_digest(expected, sig):
         return False
