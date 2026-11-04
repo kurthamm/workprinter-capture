@@ -153,7 +153,10 @@ class Machine:
         self._last_shape: tuple[int, int] | None = None
         self._last_picture_ns: int | None = None
         self._live: Picture | None = None
+        # The newest frame the saver confirmed on disk, for the page's "last saved" (the operator
+        # winds back to it). Pictures handed to the current reel's saver wait in _inflight_pictures.
         self._last_saved: tuple[int, Picture] | None = None
+        self._inflight_pictures: dict[int, Picture] = {}
         # Calibration: the pictures around the last click are copied (references only) once
         # the click is CAL_SNAPSHOT_AFTER_NS old, so the strip survives the camera streaming on
         # after Stop (the ring buffer only holds about a second).
@@ -370,10 +373,13 @@ class Machine:
                 "offset_ns": picked.offset_ns,
             }
         )
+        # Recorded before submit: the saver's callbacks wait for the machine lock, which this
+        # thread holds, but an inline callback (same thread, re-entrant lock) must find it too.
+        self._inflight_pictures[n] = picked.picture
         try:
             self._saver.submit(n, picked.picture)
-            self._last_saved = (n, picked.picture)
         except (QueueFull, FileExistsError) as e:
+            del self._inflight_pictures[n]
             self.accounting.failed_one()
             self._journal_event({"type": "failed", "frame": n, "reason": str(e)})
             self._fault(Fault("storage", str(e), "Check the reel drive, wind back, then Resume"))
@@ -415,9 +421,11 @@ class Machine:
     def _is_current(self, token: object) -> bool:
         return self._saver is not None and token is self._reel_token
 
-    def _on_save_done(self, accounting: Accounting, n: int) -> None:
+    def _on_save_done(self, accounting: Accounting, token: object, n: int) -> None:
         with self._event():
             accounting.saved_one()
+            if self._is_current(token):
+                self._last_saved = (n, self._inflight_pictures.pop(n))
 
     def _on_save_error(
         self, accounting: Accounting, token: object, n: int, exc: Exception
@@ -427,6 +435,7 @@ class Machine:
             if not self._is_current(token):
                 self._warn_previous_reel(n, exc)
                 return
+            del self._inflight_pictures[n]
             self._fault(
                 Fault(
                     "storage", f"frame {n}: {exc}", "Check the reel drive, wind back, then Resume"
@@ -704,7 +713,7 @@ class Machine:
             self._clock,
             self.config.save_queue,
             partial(self._on_save_error, accounting, token),
-            partial(self._on_save_done, accounting),
+            partial(self._on_save_done, accounting, token),
             partial(self._on_durability_error, token),
         )
         saver.start()
@@ -730,6 +739,7 @@ class Machine:
         """Under the lock: close the open reel; return its saver, accounting and journal."""
         self._replace_picker("reel closed")
         self._cal_window = []
+        self._inflight_pictures = {}
         saver, accounting, journal = self._saver, self.accounting, self._journal
         self.reel = None
         self._journal = None

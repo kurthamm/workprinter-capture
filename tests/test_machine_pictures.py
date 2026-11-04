@@ -38,6 +38,24 @@ def test_last_saved_matches_the_frame_count(tmp_path):
     assert decode_number(pic.pixels) == n
 
 
+def test_last_saved_only_shows_frames_on_disk(tmp_path):
+    film = SimFilm(frames=50, start_ns=3 * S)
+    rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
+    rig.run_until(film.switch_ns(20) + 40_000_000 + 70_000_000)
+    assert rig.machine.last_saved()[0] == 20  # written: shown
+    reel = rig.machine.reel
+    real_frame_path = reel.frame_path
+    # frame 21's write fails: the drive is gone under it
+    reel.frame_path = lambda n: (
+        tmp_path / "gone" / "f.png" if n == 21 else real_frame_path(n)
+    )
+    rig.run_until(film.switch_ns(21) + 40_000_000 + 70_000_000)
+    st = rig.machine.status()
+    assert st.state == MachineState.STOPPED and st.last_fault.kind == "storage"
+    n, pic = rig.machine.last_saved()
+    assert n == 20 and decode_number(pic.pixels) == 20  # never the failed frame
+
+
 def test_click_window_brackets_the_last_click(tmp_path):
     film = SimFilm(frames=50, start_ns=3 * S)
     rig = SimRig(cfg(tmp_path, delay_ms=40.0), film)
