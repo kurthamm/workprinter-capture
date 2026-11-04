@@ -117,12 +117,17 @@ def test_live_and_last_frame_jpegs(client, svc):
     assert r.status_code == 200 and int(r.headers["x-frame-number"]) >= 1
 
 
-def test_stop_resume_and_new_reel_flow(client, svc):
+@pytest.mark.parametrize("film_frames", [200])
+def test_stop_resume_and_new_reel_flow(client, svc, film_frames):
     login(client)
     m = svc.machine("WorkPrinter 1")
+    m2 = svc.machine("WorkPrinter 2")
     assert wait_for(lambda: m.status().state == MachineState.RECORDING, 15)
+    assert wait_for(lambda: m2.status().state == MachineState.RECORDING, 15)
     assert client.post("/api/machines/WorkPrinter 1/stop").status_code == 200
     assert m.status().state == MachineState.STOPPED
+    # a problem on one machine never stops the other (spec 5.6, 10.1)
+    assert m2.status().state == MachineState.RECORDING
     r = client.post("/api/machines/WorkPrinter 1/resume")
     assert r.status_code == 200
     assert m.status().state != MachineState.STOPPED  # the sim film keeps running
