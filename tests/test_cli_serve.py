@@ -207,3 +207,53 @@ def test_scan_continues_with_no_web_client(tmp_path):
         assert len(svc.bus.recent()) >= 1
     finally:
         svc.stop()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="signal handling differs; covered on Linux")
+@pytest.mark.parametrize("sig", [signal.SIGINT, signal.SIGTERM])
+def test_serve_stops_while_event_stream_is_open(tmp_path, sig):
+    out = tmp_path / "wpcap.toml"
+    port = free_port()
+    args = ["init-config", "--out", str(out), "--reels", str(tmp_path / "r")]
+    args += ["--certs", str(tmp_path / "c"), "--password", "pw", "--port", str(port)]
+    args += ["--bind", "127.0.0.1", "--sim-frames", "40"]
+    assert run(*args).returncode == 0
+    cmd = [sys.executable, "-m", "wpcap", "serve", "--config", str(out)]
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    stream = None
+    try:
+        ctx = ssl.create_default_context(cafile=str(tmp_path / "c" / "ca.crt"))
+        url = f"https://127.0.0.1:{port}"
+        deadline = time.monotonic() + 30
+        while True:
+            try:
+                req = urllib.request.Request(
+                    f"{url}/api/login",
+                    data=b'{"password": "pw"}',
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, context=ctx, timeout=2) as r:
+                    cookie = r.headers["set-cookie"].split(";")[0]
+                break
+            except OSError:
+                if time.monotonic() > deadline:
+                    proc.kill()
+                    pytest.fail("server did not come up:\n" + proc.stdout.read())
+                time.sleep(0.3)
+        req = urllib.request.Request(f"{url}/api/events", headers={"Cookie": cookie})
+        stream = urllib.request.urlopen(req, context=ctx, timeout=10)
+        assert b"event: hello" in stream.readline() + stream.readline()
+    finally:
+        proc.send_signal(sig)
+        try:
+            proc.wait(timeout=20)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            pytest.fail("serve did not stop with the event stream open")
+        finally:
+            if stream is not None:
+                stream.close()
+    out_text = proc.stdout.read()
+    assert proc.returncode == 0, out_text
+    assert "stopped" in out_text.lower()

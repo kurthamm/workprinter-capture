@@ -166,28 +166,36 @@ def cmd_serve(args: argparse.Namespace) -> int:
     except ServiceError as e:
         print(f"cannot start: {e}", file=sys.stderr)
         return 2
-    app = create_app(service, config)
-    hosts, ips = local_names()
-    for name in hosts + ips:
-        print(f"page: https://{name}:{config.server.port}/")
-    server = uvicorn.Server(
-        uvicorn.Config(
-            app,
-            host=config.server.host,
-            port=config.server.port,
-            ssl_certfile=str(config.server.cert_file),
-            ssl_keyfile=str(config.server.key_file),
-            log_level="warning",
-        )
-    )
-
-    def on_signal(signum, frame):
-        server.should_exit = True
-
-    server.install_signal_handlers = lambda: None
-    signal.signal(signal.SIGINT, on_signal)
-    signal.signal(signal.SIGTERM, on_signal)
     try:
+        app = create_app(service, config)
+        hosts, ips = local_names()
+        for name in hosts + ips:
+            print(f"page: https://{name}:{config.server.port}/")
+
+        class Server(uvicorn.Server):
+            def handle_exit(self, sig, frame):
+                # Let open event streams end so graceful shutdown does not wait on them.
+                app.state.shutting_down.set()
+                super().handle_exit(sig, frame)
+
+        server = Server(
+            uvicorn.Config(
+                app,
+                host=config.server.host,
+                port=config.server.port,
+                ssl_certfile=str(config.server.cert_file),
+                ssl_keyfile=str(config.server.key_file),
+                log_level="warning",
+                timeout_graceful_shutdown=5,
+            )
+        )
+        # What happens on Ctrl+C / SIGTERM: server.run() installs uvicorn's own handlers
+        # (a second Ctrl+C forces exit), shuts down gracefully, restores the handlers that
+        # were set before, then re-raises the captured signal. The handlers below only absorb
+        # that re-raised signal so it neither raises KeyboardInterrupt nor kills the process
+        # before the service is stopped.
+        signal.signal(signal.SIGINT, lambda signum, frame: None)
+        signal.signal(signal.SIGTERM, lambda signum, frame: None)
         server.run()
     finally:
         service.stop()

@@ -46,6 +46,8 @@ class NewReelBody(BaseModel):
 
 def create_app(service: Service, config: AppConfig) -> FastAPI:
     app = FastAPI(title="WorkPrinter Capture", docs_url=None, redoc_url=None, openapi_url=None)
+    # Set by the server on shutdown so open event streams end instead of blocking it.
+    app.state.shutting_down = threading.Event()
     secret = config.server.secret
     calibration_sets: dict[str, list[bytes]] = {}
     cal_lock = threading.Lock()
@@ -120,7 +122,7 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
                 hello = {"alerts": [a.as_dict() for a in service.bus.recent(50)]}
                 yield f"event: hello\ndata: {json.dumps(hello)}\n\n"
                 next_status = 0.0
-                while not await request.is_disconnected():
+                while not app.state.shutting_down.is_set() and not await request.is_disconnected():
                     now = time.monotonic()
                     if now >= next_status:
                         next_status = now + STATUS_PERIOD_S
