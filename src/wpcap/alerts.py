@@ -66,21 +66,24 @@ class Subscription:
     def __init__(self, bus: AlertBus, size: int = 100) -> None:
         self._bus = bus
         self._q: queue.Queue[Alert] = queue.Queue(maxsize=size)
+        self._put_lock = threading.Lock()
         self.dropped = 0
         self.closed = False
 
     def _put(self, a: Alert) -> None:
         if self.closed:
             return
-        try:
-            self._q.put_nowait(a)
-        except queue.Full:
-            try:
-                self._q.get_nowait()
-            except queue.Empty:
-                pass
-            self.dropped += 1
-            self._q.put_nowait(a)
+        with self._put_lock:
+            while True:
+                try:
+                    self._q.put_nowait(a)
+                    return
+                except queue.Full:
+                    try:
+                        self._q.get_nowait()
+                    except queue.Empty:
+                        continue  # a reader just made room
+                    self.dropped += 1
 
     def get(self, timeout: float) -> Alert | None:
         if self.closed:
@@ -115,6 +118,10 @@ class AlertBus:
         self._lock = threading.Lock()
         self._next_id = 1
         self._last_complaint = -1e12
+        self._fq: queue.Queue[Alert | None] = queue.Queue(maxsize=100)
+        self._fthread: threading.Thread | None = None
+        self._fclosed = False
+        self.forward_dropped = 0
 
     def for_machine(self, name: str) -> Alerter:
         return _MachineAlerter(self, name)
@@ -151,10 +158,60 @@ class AlertBus:
         for s in subs:
             s._put(a)
         if forward and self._forward is not None:
+            self._enqueue_forward(a)
+
+    def _complain(self, message: str, machine: str) -> None:
+        with self._lock:
+            now = time.monotonic()
+            if now - self._last_complaint < self.FORWARD_COMPLAINT_INTERVAL_S:
+                return
+            self._last_complaint = now
+        self._publish("warning", "Phone alert failed", message, machine, forward=False)
+
+    def _enqueue_forward(self, a: Alert) -> None:
+        """Hand the alert to the forwarder thread; never blocks, never raises."""
+        with self._lock:
+            if self._fclosed:
+                return
+            if self._fthread is None:
+                self._fthread = threading.Thread(
+                    target=self._forward_loop, name="alert-forwarder", daemon=True
+                )
+                self._fthread.start()
+        full = False
+        while True:
             try:
-                self._forward.alert(level, title, message)
+                self._fq.put_nowait(a)
+                break
+            except queue.Full:
+                full = True
+                try:
+                    self._fq.get_nowait()
+                except queue.Empty:
+                    continue
+                self.forward_dropped += 1
+        if full:
+            self._complain("phone alert queue full", a.machine)
+
+    def _forward_loop(self) -> None:
+        assert self._forward is not None
+        while True:
+            a = self._fq.get()
+            if a is None:
+                return
+            try:
+                self._forward.alert(a.level, a.title, a.message)
             except Exception as e:  # noqa: BLE001 - delivery failure must never reach capture
-                now = time.monotonic()
-                if now - self._last_complaint >= self.FORWARD_COMPLAINT_INTERVAL_S:
-                    self._last_complaint = now
-                    self._publish("warning", "Phone alert failed", str(e), machine, forward=False)
+                self._complain(str(e), a.machine)
+
+    def close(self, timeout_s: float = 5.0) -> None:
+        """Deliver what is queued, then stop the forwarder thread."""
+        with self._lock:
+            self._fclosed = True
+            t = self._fthread
+        if t is None:
+            return
+        self._fq.put(None, timeout=timeout_s)
+        t.join(timeout_s)
+        if t.is_alive():
+            raise TimeoutError("alert forwarder did not stop")

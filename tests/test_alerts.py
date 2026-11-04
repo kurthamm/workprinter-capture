@@ -1,4 +1,5 @@
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import pytest
@@ -127,8 +128,12 @@ def test_bus_reports_forward_failure_once_per_minute_and_keeps_going():
     a = bus.for_machine("m")
     a.alert("info", "one", "")
     a.alert("info", "two", "")
+    bus.close()
     titles = [r.title for r in bus.recent()]
-    assert titles == ["one", "Phone alert failed", "two"]
+    # the complaint arrives from the forwarder thread, so its position among
+    # the machine's own alerts is not fixed; it is there exactly once
+    assert [t for t in titles if t != "Phone alert failed"] == ["one", "two"]
+    assert titles.count("Phone alert failed") == 1
     assert Dead.calls == 2  # it keeps trying; only the complaint is throttled
 
 
@@ -142,4 +147,66 @@ def test_forward_failure_warning_is_not_forwarded_again():
 
     bus = AlertBus(forward=Dead())
     bus.for_machine("m").alert("problem", "p", "")
+    bus.close()
+    assert [r.title for r in bus.recent()] == ["p", "Phone alert failed"]
     assert Dead.calls == 1  # the "Phone alert failed" warning did not recurse into ntfy
+
+
+def test_concurrent_publishers_on_a_full_subscriber_never_raise():
+    bus = AlertBus()
+    sub = bus.subscribe()  # never drained
+    errors = []
+
+    def publish(k):
+        try:
+            for i in range(200):
+                bus.for_machine("m").alert("info", f"{k}-{i}", "")
+        except Exception as e:  # noqa: BLE001 - the test reports it
+            errors.append(e)
+
+    threads = [threading.Thread(target=publish, args=(k,)) for k in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert errors == []
+    assert sub.dropped == 8 * 200 - 100
+    held = [sub.get(0.1) for _ in range(100)]
+    assert all(h is not None for h in held)
+    assert sub.get(0.01) is None
+    assert [h.id for h in held] == list(range(8 * 200 - 99, 8 * 200 + 1))
+
+
+def test_slow_forwarder_does_not_delay_alert():
+    class Slow:
+        def alert(self, level, title, message):
+            time.sleep(1)
+
+    bus = AlertBus(forward=Slow())
+    a = bus.for_machine("m")
+    a.alert("info", "warm", "")  # starts the thread; the next ones queue behind the sleep
+    t0 = time.monotonic()
+    a.alert("problem", "STOP", "")
+    assert time.monotonic() - t0 < 0.05
+    assert [r.title for r in bus.recent()] == ["warm", "STOP"]
+
+
+def test_forward_queue_overflow_drops_oldest_and_complains():
+    gate = threading.Event()
+    seen = []
+
+    class Blocked:
+        def alert(self, level, title, message):
+            gate.wait()
+            seen.append(title)
+
+    bus = AlertBus(forward=Blocked())
+    a = bus.for_machine("m")
+    for i in range(105):
+        a.alert("info", str(i), "")
+    gate.set()
+    bus.close()
+    assert bus.forward_dropped >= 4
+    assert any(r.title == "Phone alert failed" and r.message == "phone alert queue full"
+               for r in bus.recent(200))
+    assert seen[-1] == "104"
