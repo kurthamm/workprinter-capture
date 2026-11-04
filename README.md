@@ -18,7 +18,7 @@ Scanning is stage one. The same PC then runs **DaVinci Resolve** (free) to stabi
 
 ## Status
 
-Planning. No code yet.
+Capture core built and tested (Python, simulated camera and sync box; 163 tests). Next: the web page, then the Pico firmware and the Windows camera backend. Run the simulator with `python -m wpcap demo --reels DIR --frames N`.
 
 - `docs/superpowers/specs/2026-09-23-workprinter-capture-design.md` — version 1 design spec (one Windows PC + USB sync boxes)
 - `DECISIONS.md` — research (including MovieStuff's archived instructions) and every decision
