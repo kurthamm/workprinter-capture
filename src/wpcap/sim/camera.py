@@ -75,6 +75,9 @@ class SimCamera:
     def started(self) -> bool:
         return self._cb is not None
 
+    def load_film(self, film: SimFilm) -> None:
+        self.film = film
+
     def info(self) -> CameraInfo:
         return CameraInfo(
             name="Simulated camera",

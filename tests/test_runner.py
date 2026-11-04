@@ -1,0 +1,75 @@
+import time
+from pathlib import Path
+
+from wpcap.alerts import AlertBus
+from wpcap.config import MachineSpec
+from wpcap.machine import MachineState
+from wpcap.runner import SimRunner
+
+
+def spec(tmp_path: Path, frames: int = 40) -> MachineSpec:
+    return MachineSpec(
+        name="WorkPrinter 1", kind="sim", reel_root=tmp_path / "reels", delay_ms=40.0,
+        debounce_us=20000, film_type="super8", sim_frames=frames,
+    )
+
+
+def wait_for(pred, timeout_s: float):
+    end = time.monotonic() + timeout_s
+    while time.monotonic() < end:
+        if pred():
+            return True
+        time.sleep(0.05)
+    return pred()
+
+
+def test_sim_runner_scans_a_reel_in_real_time_and_stops_cleanly(tmp_path):
+    bus = AlertBus()
+    r = SimRunner(spec(tmp_path, frames=40), bus.for_machine("WorkPrinter 1"))
+    r.start()
+    assert r.alive
+    assert wait_for(lambda: r.machine.status().state == MachineState.RECORDING, 10)
+    assert wait_for(lambda: r.machine.status().state == MachineState.REEL_FINISHED, 20)
+    st = r.machine.status()
+    assert st.frames_saved >= 40 and st.frames_failed == 0
+    assert any(a.title.startswith("Reel finished") for a in bus.recent())
+    r.stop()
+    assert not r.alive and r.error is None
+    assert r.machine.status().state == MachineState.SHUT_DOWN
+
+
+def test_stop_before_anything_happens_is_fine(tmp_path):
+    r = SimRunner(spec(tmp_path), AlertBus().for_machine("WorkPrinter 1"))
+    r.start()
+    r.stop()
+    assert not r.alive and r.error is None
+
+
+def test_thread_death_is_reported_not_hidden(tmp_path, monkeypatch):
+    bus = AlertBus()
+    r = SimRunner(spec(tmp_path), bus.for_machine("WorkPrinter 1"))
+
+    def boom(*a, **k):
+        raise RuntimeError("simulated crash")
+
+    monkeypatch.setattr(r.rig, "run_realtime", boom)
+    r.start()
+    assert wait_for(lambda: not r.alive, 5)
+    assert r.error is not None and "simulated crash" in r.error
+    assert bus.recent()[-1].level == "problem" and "capture stopped" in bus.recent()[-1].title
+    r.stop()  # idempotent after death
+
+
+def test_restart_film_lets_the_demo_scan_again(tmp_path):
+    bus = AlertBus()
+    r = SimRunner(spec(tmp_path, frames=30), bus.for_machine("WorkPrinter 1"))
+    r.start()
+    assert wait_for(lambda: r.machine.status().state == MachineState.REEL_FINISHED, 20)
+    first = r.machine.reel.path
+    r.restart_film()
+    from wpcap.machine import ReelMeta
+
+    r.machine.new_reel(ReelMeta(name="Second"))
+    assert wait_for(lambda: r.machine.status().state == MachineState.RECORDING, 10)
+    assert r.machine.reel.path != first
+    r.stop()

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from wpcap.clock import SimClock
 from wpcap.clocksync import ClockSync
-from wpcap.machine import Machine, MachineConfig, RecordingAlerter
+from wpcap.machine import Alerter, Machine, MachineConfig, RecordingAlerter
 from wpcap.sim.camera import SimCamera
 from wpcap.sim.film import SimFilm
 from wpcap.sim.syncbox import SimSyncBox
@@ -30,6 +30,7 @@ class SimRig:
         cam_fps: float = 60.0,
         cam_size: tuple[int, int] = (192, 108),
         free_bytes: Callable[[Path], int] | None = None,
+        alerter: Alerter | None = None,
     ) -> None:
         self.clock = SimClock()
         box_side, pc_side = sim_transport_pair()
@@ -37,7 +38,7 @@ class SimRig:
         self.camera = SimCamera(
             self.clock, film, fps=cam_fps, width=cam_size[0], height=cam_size[1]
         )
-        self.alerter = RecordingAlerter()
+        self.alerter = alerter if alerter is not None else RecordingAlerter()
         # The Machine binds the link's three callbacks to itself; these are placeholders until then.
         link = SyncBoxLink(pc_side, self.clock, ClockSync(), _unbound, _unbound, _unbound)
         kwargs = {} if free_bytes is None else {"free_bytes": free_bytes}
@@ -48,7 +49,14 @@ class SimRig:
 
     @property
     def alerts(self) -> list[tuple[str, str, str]]:
-        return self.alerter.alerts
+        return getattr(self.alerter, "alerts", [])
+
+    def load_film(self, film: SimFilm) -> None:
+        """Thread new film: the camera renders it and the switch follows its timing. Call only
+        between reels (the machine must not be recording)."""
+        self.camera.load_film(film)
+        self.switch_times = film.switch_times()
+        self._next_switch = 0
 
     def _step(self) -> None:
         now = self.clock.now_ns()
