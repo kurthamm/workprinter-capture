@@ -30,6 +30,7 @@ from wpcap.sim.film import SimFilm
 from wpcap.sim.rig import SimRig
 from wpcap.tls import (
     RENEW_WITHIN,
+    check_server_pair,
     local_names,
     make_local_ca,
     make_server_cert,
@@ -90,8 +91,17 @@ def _print_status(rig: SimRig) -> None:
     )
 
 
+def _read_stdin_password() -> str:
+    """One line from stdin; on a terminal it is read without echo."""
+    if sys.stdin.isatty():
+        return getpass.getpass("Password: ")
+    return sys.stdin.readline().rstrip("\r\n")
+
+
 def cmd_hash_password(args: argparse.Namespace) -> int:
-    pw = args.password if args.password is not None else sys.stdin.readline().rstrip("\r\n")
+    # Without --password the password comes from stdin (--password-stdin is the same, spelled
+    # out for scripts). --password lands in the process list and shell history.
+    pw = args.password if args.password is not None else _read_stdin_password()
     if not pw:
         print("empty password", file=sys.stderr)
         return 2
@@ -133,7 +143,15 @@ def cmd_init_config(args: argparse.Namespace) -> int:
             return 2
     # Absolute paths in the config: the service may run from another working directory.
     certs = Path(args.certs).resolve()
-    pw = args.password if args.password is not None else _ask_password()
+    if args.password is not None:
+        pw = args.password
+    elif args.password_stdin:
+        pw = _read_stdin_password()
+    else:
+        pw = _ask_password()
+    if not pw:
+        print("empty password", file=sys.stderr)
+        return 2
     reels = Path(args.reels).resolve()
     for n in ("WorkPrinter 1", "WorkPrinter 2"):
         (reels / n).mkdir(parents=True, exist_ok=True)
@@ -149,7 +167,11 @@ def cmd_init_config(args: argparse.Namespace) -> int:
             return 2
     hosts, ips = local_names()
     hosts += [h for h in args.host if h not in hosts]
-    ips += [ip for ip in args.ip if ip not in ips]
+    # serve prints the bind address as the page URL, so the certificate must name it.
+    named_ips = list(args.ip)
+    if not ipaddress.ip_address(args.bind).is_unspecified:
+        named_ips.insert(0, args.bind)
+    ips += [ip for ip in named_ips if ip not in ips]
     crt, key = certs / "wpcap.crt", certs / "wpcap.key"
     if not hosts:
         print("no host names for the certificate", file=sys.stderr)
@@ -163,7 +185,7 @@ def cmd_init_config(args: argparse.Namespace) -> int:
     if crt.exists():
         have_dns, have_ips = server_cert_names(crt)
         missing = [h for h in args.host if h.lower() not in have_dns]
-        missing += [ip for ip in args.ip if str(ipaddress.ip_address(ip)) not in have_ips]
+        missing += [ip for ip in named_ips if str(ipaddress.ip_address(ip)) not in have_ips]
         if missing:
             print(
                 f"the existing certificate {crt} lacks {', '.join(missing)}; run: "
@@ -223,12 +245,19 @@ def cmd_gen_cert(args: argparse.Namespace) -> int:
 
 def renew_cert_if_expiring(cert_file: Path, key_file: Path) -> None:
     """A server certificate expiring within RENEW_WITHIN is renewed from the local CA next to
-    it; without that CA the operator is warned and the service still starts."""
+    it; without that CA the operator is warned and the service still starts, unless the
+    certificate has already expired (then there is nothing to serve)."""
     not_after = server_cert_not_after(cert_file)
     if not_after - dt.datetime.now(dt.UTC) > RENEW_WITHIN:
         return
     ca_crt, ca_key = cert_file.parent / "ca.crt", cert_file.parent / "ca.key"
     if not (ca_crt.exists() and ca_key.exists()):
+        if not_after <= dt.datetime.now(dt.UTC):
+            raise RuntimeError(
+                f"the certificate {cert_file} expired {not_after:%Y-%m-%d %H:%M} UTC and there "
+                f"is no CA ({ca_crt}, {ca_key}) to renew it; make a new one with: "
+                f"wpcap gen-cert --replace --certs {cert_file.parent}"
+            )
         print(
             f"warning: the certificate {cert_file} expires {not_after:%Y-%m-%d %H:%M} UTC and "
             f"there is no CA ({ca_crt}, {ca_key}) to renew it; the page will stop working "
@@ -278,6 +307,13 @@ def cmd_serve(args: argparse.Namespace) -> int:
         if not p.exists():
             print(f"certificate file not found: {p} (run: wpcap gen-cert)", file=sys.stderr)
             return 2
+    try:
+        check_server_pair(
+            config.server.cert_file, config.server.key_file, config.server.cert_file.parent
+        )
+    except ValueError as e:
+        print(f"cannot start: {e}", file=sys.stderr)
+        return 2
     renew_cert_if_expiring(config.server.cert_file, config.server.key_file)
     service = Service(config)
     started = False
@@ -293,7 +329,8 @@ def cmd_serve(args: argparse.Namespace) -> int:
         # The server listens on the configured address only; list names that reach it.
         shown = hosts + ips if config.server.host == "0.0.0.0" else [config.server.host]
         for name in shown:
-            print(f"page: https://{name}:{config.server.port}/")
+            url_host = f"[{name}]" if ":" in name else name
+            print(f"page: https://{url_host}:{config.server.port}/")
 
         class Server(uvicorn.Server):
             def handle_exit(self, sig, frame):
@@ -340,7 +377,14 @@ def main(argv: list[str] | None = None) -> int:
     hp = sub.add_parser(
         "hash-password", help="print the scrypt hash of a password (stdin or --password)"
     )
-    hp.add_argument("--password")
+    hp_pw = hp.add_mutually_exclusive_group()
+    hp_pw.add_argument(
+        "--password",
+        help="scripts and tests only: visible in the process list and shell history",
+    )
+    hp_pw.add_argument(
+        "--password-stdin", action="store_true", help="read the password from stdin (default)"
+    )
 
     ic = sub.add_parser(
         "init-config",
@@ -353,7 +397,17 @@ def main(argv: list[str] | None = None) -> int:
     ic.add_argument(
         "--certs", required=True, help="folder for ca.crt, ca.key, wpcap.crt, wpcap.key"
     )
-    ic.add_argument("--password", help="(scripts only; otherwise asked on the terminal)")
+    ic_pw = ic.add_mutually_exclusive_group()
+    ic_pw.add_argument(
+        "--password",
+        help="scripts and tests only: visible in the process list and shell history; "
+        "otherwise asked on the terminal",
+    )
+    ic_pw.add_argument(
+        "--password-stdin",
+        action="store_true",
+        help="read the password from stdin (recommended for non-interactive use)",
+    )
     ic.add_argument("--bind", default="0.0.0.0", dest="bind")
     ic.add_argument(
         "--host", action="append", default=[], help="extra hostname for the certificate"

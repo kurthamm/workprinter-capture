@@ -358,3 +358,42 @@ def test_init_config_fails_when_the_reused_certificate_lacks_a_requested_name(tm
 def test_init_config_file_is_owner_only(tmp_path):
     assert _init(tmp_path).returncode == 0
     assert (tmp_path / "wpcap.toml").stat().st_mode & 0o077 == 0
+
+
+def test_init_config_password_from_stdin_is_never_echoed(tmp_path):
+    r = run(
+        "init-config", "--out", str(tmp_path / "wpcap.toml"), "--reels", str(tmp_path / "r"),
+        "--certs", str(tmp_path / "c"), "--password-stdin", input_text="stdin-secret\n",
+    )
+    assert r.returncode == 0, r.stderr
+    assert "stdin-secret" not in r.stdout + r.stderr
+    hashed = load_config(tmp_path / "wpcap.toml").server.password_hash
+    assert verify_password("stdin-secret", hashed)
+
+
+def test_init_config_refuses_an_empty_password_before_making_anything(tmp_path):
+    for extra, inp in ((("--password", ""), None), (("--password-stdin",), "\n")):
+        r = run(
+            "init-config", "--out", str(tmp_path / "wpcap.toml"), "--reels", str(tmp_path / "r"),
+            "--certs", str(tmp_path / "c"), *extra, input_text=inp,
+        )
+        assert r.returncode == 2 and "empty password" in r.stderr
+        assert not (tmp_path / "r").exists() and not (tmp_path / "c").exists()
+
+
+def test_password_and_password_stdin_are_mutually_exclusive(tmp_path):
+    r = run("hash-password", "--password", "a", "--password-stdin")
+    assert r.returncode == 2 and "not allowed with" in r.stderr
+    assert "a" not in r.stdout
+
+
+def test_init_config_names_a_specific_bind_address_in_the_certificate(tmp_path):
+    from wpcap.tls import server_cert_names
+
+    r = _init(tmp_path, "--bind", "127.0.0.2")
+    assert r.returncode == 0, r.stderr
+    assert "127.0.0.2" in server_cert_names(tmp_path / "c" / "wpcap.crt")[1]
+    # a later run for a different bind address must not keep a certificate lacking it
+    (tmp_path / "wpcap.toml").unlink()
+    r = _init(tmp_path, "--bind", "127.0.0.3")
+    assert r.returncode == 2 and "lacks 127.0.0.3" in r.stderr

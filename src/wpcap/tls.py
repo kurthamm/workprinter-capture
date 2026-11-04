@@ -6,6 +6,9 @@ import datetime as dt
 import ipaddress
 import os
 import socket
+import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from cryptography import x509
@@ -66,8 +69,14 @@ def make_local_ca(out_dir: Path, name: str = "WorkPrinter Capture Local CA") -> 
         .add_extension(x509.SubjectKeyIdentifier.from_public_key(key.public_key()), critical=False)
         .sign(key, hashes.SHA256())
     )
-    _write_private(ca_key, key)
-    _write_cert(ca_crt, cert)
+    try:
+        _write_private(ca_key, key)
+        _write_cert(ca_crt, cert)
+    except BaseException:
+        # A lone ca.key, or a partial ca.crt taken for a whole CA, would block the next run.
+        ca_key.unlink(missing_ok=True)
+        ca_crt.unlink(missing_ok=True)
+        raise
     return ca_crt, ca_key
 
 
@@ -152,12 +161,56 @@ def replace_server_cert(
     old pair, so a failure (a bad IP, a full disk) leaves the old pair in place."""
     new_cert = cert_file.with_name(cert_file.name + ".new")
     new_key = key_file.with_name(key_file.name + ".new")
-    # Left by a renewal interrupted before its replace: never in use, safe to remove.
-    new_cert.unlink(missing_ok=True)
-    new_key.unlink(missing_ok=True)
-    make_server_cert(ca_cert, ca_key, new_cert, new_key, hosts, ips)
-    os.replace(new_key, key_file)
-    os.replace(new_cert, cert_file)
+    # One replacement at a time (gen-cert --replace and a serve renewal share these names).
+    with _replace_lock(cert_file.parent):
+        # Left by a renewal interrupted before its replace: never in use, safe to remove.
+        new_cert.unlink(missing_ok=True)
+        new_key.unlink(missing_ok=True)
+        make_server_cert(ca_cert, ca_key, new_cert, new_key, hosts, ips)
+        os.replace(new_key, key_file)
+        os.replace(new_cert, cert_file)
+
+
+@contextmanager
+def _replace_lock(directory: Path) -> Iterator[None]:
+    """Exclusive lock on wpcap.lock in the certificate folder; fails at once if another run
+    holds it. The operating system drops the lock if the holder dies."""
+    lock_path = directory / "wpcap.lock"
+    with open(lock_path, "a+b") as f:
+        try:
+            if sys.platform == "win32":
+                import msvcrt
+
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError as e:
+            raise RuntimeError(
+                f"another certificate replacement is running in {directory} ({lock_path} is "
+                "locked); wait for it to finish, then try again"
+            ) from e
+        try:
+            yield
+        finally:
+            if sys.platform == "win32":
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+
+
+def check_server_pair(cert_file: Path, key_file: Path, certs_dir: Path) -> None:
+    """The key must belong to the certificate: replace_server_cert moves the two files one
+    after the other, so an interruption between the moves leaves a mismatched pair."""
+    cert = x509.load_pem_x509_certificate(cert_file.read_bytes())
+    key = serialization.load_pem_private_key(key_file.read_bytes(), password=None)
+    der, spki = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    if key.public_key().public_bytes(der, spki) != cert.public_key().public_bytes(der, spki):
+        raise ValueError(
+            f"{key_file} does not match {cert_file} (a certificate replacement was probably "
+            f"interrupted); make a new pair with: wpcap gen-cert --certs {certs_dir} --replace"
+        )
 
 
 def local_names() -> tuple[list[str], list[str]]:

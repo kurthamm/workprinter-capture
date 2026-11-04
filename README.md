@@ -29,7 +29,7 @@ python -m wpcap init-config --out wpcap.toml --reels DIR --certs DIR
 python -m wpcap serve --config wpcap.toml
 ```
 
-`init-config` asks for a password. Optional flags: `--bind`, `--port` (default 8443), `--sim-frames`, `--host`, `--ip` (names and addresses for the certificate).
+`init-config` asks for a password. For scripts, pipe it in with `--password-stdin` (recommended); `--password VALUE` also works but shows the password in the process list and shell history, so use it for tests only. `hash-password` reads stdin the same way. Optional flags: `--bind`, `--port` (default 8443), `--sim-frames`, `--host`, `--ip` (names and addresses for the certificate). The certificate covers this PC's name, `localhost`, the IPv4 addresses the PC resolves, and the `--bind` address. For any other address in the URL, such as a Tailscale or LAN address, add it with `--host` or `--ip`.
 
 Then open `https://<pc-name-or-ip>:8443/` on a phone or PC and log in. Both simulated machines start a simulated reel when `serve` starts. With the default `--sim-frames` of 300, each reel runs about 40 seconds, so log in promptly. When a reel finishes, press New Reel to record another.
 

@@ -85,7 +85,7 @@ def test_serve_renews_a_certificate_expiring_soon(tmp_path, capsys):
     assert _san(crt) == names
     ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER).load_cert_chain(crt, key)  # key matches cert
     assert sorted(p.name for p in tmp_path.iterdir()) == [
-        "ca.crt", "ca.key", "wpcap.crt", "wpcap.key"
+        "ca.crt", "ca.key", "wpcap.crt", "wpcap.key", "wpcap.lock"
     ]
     # a fresh certificate is left alone
     before = crt.read_bytes()
@@ -170,3 +170,52 @@ def test_server_cert_names_lists_dns_names_and_addresses(tmp_path):
     crt = tmp_path / "s.crt"
     make_server_cert(ca_crt, ca_key, crt, tmp_path / "s.key", ["Scanpc"], ["192.168.1.5"])
     assert server_cert_names(crt) == ({"scanpc"}, {"192.168.1.5"})
+
+
+def test_failed_ca_write_leaves_no_partial_ca_files(tmp_path, monkeypatch):
+    from wpcap import tls
+
+    def boom(path, cert):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(tls, "_write_cert", boom)
+    with pytest.raises(OSError, match="disk full"):
+        make_local_ca(tmp_path)
+    assert not (tmp_path / "ca.key").exists() and not (tmp_path / "ca.crt").exists()
+
+
+def test_expired_certificate_without_a_ca_stops_startup(tmp_path):
+    from wpcap.__main__ import renew_cert_if_expiring
+
+    ca_dir, certs = tmp_path / "ca", tmp_path / "certs"
+    ca_crt, ca_key = make_local_ca(ca_dir)
+    crt, key = certs / "wpcap.crt", certs / "wpcap.key"
+    make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [], days=0)  # expired 5 min ago
+    with pytest.raises(RuntimeError, match=r"expired .* no CA .* wpcap gen-cert --replace"):
+        renew_cert_if_expiring(crt, key)
+
+
+def test_mismatched_key_and_certificate_name_the_fix(tmp_path):
+    from wpcap.tls import check_server_pair
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+    make_server_cert(ca_crt, ca_key, tmp_path / "a.crt", tmp_path / "a.key", ["scanpc"], [])
+    make_server_cert(ca_crt, ca_key, tmp_path / "b.crt", tmp_path / "b.key", ["scanpc"], [])
+    check_server_pair(tmp_path / "a.crt", tmp_path / "a.key", tmp_path)
+    with pytest.raises(ValueError, match="gen-cert --certs .* --replace"):
+        check_server_pair(tmp_path / "a.crt", tmp_path / "b.key", tmp_path)
+
+
+def test_a_second_replacement_in_the_same_folder_fails_fast(tmp_path):
+    from wpcap.tls import _replace_lock, replace_server_cert
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+    crt, key = tmp_path / "wpcap.crt", tmp_path / "wpcap.key"
+    make_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [])
+    before = crt.read_bytes()
+    with _replace_lock(tmp_path):
+        with pytest.raises(RuntimeError, match="another certificate replacement"):
+            replace_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [])
+    assert crt.read_bytes() == before
+    replace_server_cert(ca_crt, ca_key, crt, key, ["scanpc"], [])  # lock released
+    assert crt.read_bytes() != before
