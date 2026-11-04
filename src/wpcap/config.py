@@ -68,19 +68,33 @@ def hash_password(password: str) -> str:
     return f"scrypt${salt.hex()}${key.hex()}"
 
 
-def verify_password(password: str, stored: str) -> bool:
-    """Constant-time; a malformed stored value is simply 'no match'."""
+def _parse_hash(stored: object) -> tuple[bytes, bytes] | None:
+    """Return (salt, key) for a well-formed scrypt hash string, else None."""
+    if not isinstance(stored, str):
+        return None
+    parts = stored.split("$")
+    if len(parts) != 3 or parts[0] != "scrypt":
+        return None
     try:
-        algo, salt_hex, key_hex = stored.split("$")
-        if algo != "scrypt":
-            return False
-        salt, key = bytes.fromhex(salt_hex), bytes.fromhex(key_hex)
+        salt, key = bytes.fromhex(parts[1]), bytes.fromhex(parts[2])
     except ValueError:
+        return None
+    if not salt or len(key) != _SCRYPT["dklen"]:
+        return None
+    return salt, key
+
+
+def verify_password(password: str, stored: str) -> bool:
+    """Constant-time; any malformed input is simply 'no match' (never raises)."""
+    parsed = _parse_hash(stored)
+    if parsed is None or not isinstance(password, str):
         return False
-    if len(key) != _SCRYPT["dklen"]:
+    salt, key = parsed
+    try:
+        pw = password.encode("utf-8")
+    except UnicodeEncodeError:  # e.g. a lone surrogate from a JSON "\ud800"
         return False
-    candidate = hashlib.scrypt(password.encode("utf-8"), salt=salt, **_SCRYPT)
-    return hmac.compare_digest(candidate, key)
+    return hmac.compare_digest(hashlib.scrypt(pw, salt=salt, **_SCRYPT), key)
 
 
 def new_secret() -> str:
@@ -119,8 +133,10 @@ def _server(data: dict) -> ServerConfig:
         raise ConfigError(f"server.port out of range: {port}")
     for k in ("host", "password_hash", "secret", "cert_file", "key_file"):
         _typed(s, "server", k, str)
-    if not s["password_hash"].startswith("scrypt$"):
-        raise ConfigError("server.password_hash is not an scrypt hash (run: wpcap hash-password)")
+    if _parse_hash(s["password_hash"]) is None:
+        raise ConfigError(
+            "server.password_hash is not a valid scrypt hash (run: wpcap hash-password)"
+        )
     if len(s["secret"]) < 32:
         raise ConfigError("server.secret must be at least 32 characters (run: wpcap init-config)")
     return ServerConfig(

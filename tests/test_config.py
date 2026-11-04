@@ -144,3 +144,20 @@ def test_sample_config_loads(tmp_path):
     c = load_config(write(tmp_path, text))
     assert len(c.machines) == 2 and all(m.kind == "sim" for m in c.machines)
     assert c.machines[0].reel_root != c.machines[1].reel_root
+
+
+def test_verify_never_raises_on_garbage():
+    h = hash_password("pw")
+    assert not verify_password("\ud800", h)
+    assert not verify_password("pw", None)  # type: ignore[arg-type]
+    assert not verify_password("pw", 123)  # type: ignore[arg-type]
+    assert not verify_password("pw", "scrypt$" + "00" * 16 + "$" + "00" * 8)  # short key
+    assert not verify_password("pw", "scrypt$$" + "00" * 32)  # empty salt
+    assert not verify_password("pw", "scrypt$00$00$00")  # too many parts
+
+
+def test_malformed_password_hash_rejected_at_load(tmp_path):
+    bad = hash_password("pw")
+    for broken in ("scrypt$zz$zz", "scrypt$00$00", bad + "$x"):
+        with pytest.raises(ConfigError, match="server.password_hash"):
+            load_config(write(tmp_path, good(tmp_path, ph=broken)))
