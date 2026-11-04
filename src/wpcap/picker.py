@@ -43,6 +43,15 @@ class RingBuffer:
     def is_taken(self, index: int) -> bool:
         return index in self._taken
 
+    def window(self, t_ns: int, before: int, after: int) -> list[Picture]:
+        """The picture nearest t_ns with up to `before` older and `after` newer neighbours,
+        oldest first. Fewer at the edges of the buffer; empty when the buffer is empty."""
+        if not self._pics:
+            return []
+        pics = list(self._pics)
+        centre = min(range(len(pics)), key=lambda i: abs(pics[i].t_ns - t_ns))
+        return pics[max(0, centre - before) : centre + after + 1]
+
     def __len__(self) -> int:
         return len(self._pics)
 
@@ -86,6 +95,7 @@ class FramePicker:
         self._on_failed = on_failed
         self.buffer = RingBuffer(window_ns)
         self._pending: deque[PendingClick] = deque()
+        self.last_target_ns: int | None = None
 
     @property
     def pending_count(self) -> int:
@@ -99,8 +109,17 @@ class FramePicker:
 
     def on_click(self, pending: PendingClick) -> None:
         pending.target_ns = pending.click.t_pc_ns + self.delay_ns
+        self.last_target_ns = pending.target_ns
         self._pending.append(pending)
         self._resolve()
+
+    def set_delay(self, delay_ns: int) -> None:
+        self.delay_ns = delay_ns
+
+    def window(self, before: int, after: int) -> list[Picture]:
+        if self.last_target_ns is None:
+            return []
+        return self.buffer.window(self.last_target_ns, before, after)
 
     def on_picture(self, p: Picture) -> None:
         self.buffer.push(p)

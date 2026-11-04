@@ -146,6 +146,8 @@ class Machine:
         self._first_shape: tuple[int, int] | None = None
         self._last_shape: tuple[int, int] | None = None
         self._last_picture_ns: int | None = None
+        self._live: Picture | None = None
+        self._last_saved: tuple[int, Picture] | None = None
         self._pictures_seen = 0
         # Fault kinds already raised while their condition persists: each is raised once,
         # and forgotten on resume, new reel, a new segment, or when the machine is Ready again.
@@ -248,6 +250,7 @@ class Machine:
                 return
             self._pictures_seen += 1
             self._last_picture_ns = p.t_ns
+            self._live = p
             self._last_shape = p.shape
             if self._first_shape is None:
                 self._first_shape = p.shape
@@ -348,6 +351,7 @@ class Machine:
         )
         try:
             self._saver.submit(n, picked.picture)
+            self._last_saved = (n, picked.picture)
         except (QueueFull, FileExistsError) as e:
             self.accounting.failed_one()
             self._journal_event({"type": "failed", "frame": n, "reason": str(e)})
@@ -555,6 +559,41 @@ class Machine:
                         "then Resume",
                     )
                 )
+
+    # ---- pictures for the page --------------------------------------------------------------
+
+    def live_picture(self) -> Picture | None:
+        with self._lock:
+            return self._live
+
+    def last_saved(self) -> tuple[int, Picture] | None:
+        with self._lock:
+            return self._last_saved
+
+    def click_window(self, before: int = 3, after: int = 3) -> list[tuple[int, Picture]]:
+        """Pictures around the last click's target time, with their offset in ms (rounded)."""
+        with self._lock:
+            target = self._picker.last_target_ns
+            if target is None:
+                return []
+            return [(round((p.t_ns - target) / 1e6), p) for p in self._picker.window(before, after)]
+
+    def set_delay_ms(self, delay_ms: float) -> None:
+        """Calibration: the delay from switch closure to the sharp picture. Not while recording
+        (frames in flight were picked with the old delay). Recorded in the open reel."""
+        if not (0.0 <= delay_ms <= 500.0):  # also rejects NaN
+            raise ValueError(f"delay must be 0..500 ms, got {delay_ms}")
+        with self._event():
+            if self.state == MachineState.SHUT_DOWN:
+                raise RuntimeError("machine is shut down")
+            if self.state == MachineState.RECORDING:
+                raise RuntimeError("cannot change the delay while recording: Stop first")
+            self.config.delay_ms = delay_ms
+            self._picker.set_delay(round(delay_ms * 1e6))
+            if self.reel is not None:
+                data = self.reel.read_reel_json()
+                data["delay_ms"] = delay_ms
+                self.reel.write_reel_json(data)
 
     # ---- internals -------------------------------------------------------------------------
 
