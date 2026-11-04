@@ -315,3 +315,29 @@ def test_parallel_logins_check_at_most_two_passwords_at_once(svc, monkeypatch):
             t.join()
     assert codes == [200] * 6
     assert running[1] == web_app.LOGIN_CHECKS_AT_ONCE
+
+
+def test_logins_beyond_the_waiting_limit_get_503(svc, monkeypatch):
+    import threading
+
+    import wpcap.web.app as web_app
+
+    release = threading.Event()
+    monkeypatch.setattr(web_app, "verify_password", lambda p, s: release.wait(30) or True)
+    total = web_app.LOGIN_CHECKS_AT_ONCE + web_app.LOGIN_MAX_WAITING
+    with TestClient(create_app(svc, svc.config), base_url="https://testserver") as c:
+        codes = []
+
+        def attempt():
+            codes.append(c.post("/api/login", json={"password": "x"}).status_code)
+
+        threads = [threading.Thread(target=attempt) for _ in range(total + 3)]
+        for t in threads:
+            t.start()
+        deadline = time.monotonic() + 10
+        while codes.count(503) < 3 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        release.set()
+        for t in threads:
+            t.join()
+    assert codes.count(503) == 3 and codes.count(200) == total

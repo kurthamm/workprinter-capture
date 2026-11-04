@@ -156,10 +156,12 @@ function card(name, filmType) {
   });
   $(".calibrate", el).addEventListener("click", () => calibrate(name, el));
   const live = $(".live", el);
-  live.addEventListener("error", () => live.classList.add("hidden"));
-  live.addEventListener("load", () => live.classList.remove("hidden"));
+  let liveBusy = false; // one live request at a time: a new src aborts the one in flight
+  live.addEventListener("error", () => { liveBusy = false; live.classList.add("hidden"); });
+  live.addEventListener("load", () => { liveBusy = false; live.classList.remove("hidden"); });
   setInterval(() => {
-    if ($("#login").classList.contains("hidden") && !["shut_down", "dead"].includes(el.dataset.state)) {
+    if (!liveBusy && $("#login").classList.contains("hidden") && !["shut_down", "dead"].includes(el.dataset.state)) {
+      liveBusy = true;
       live.src = `${path}/live.jpg?t=${Date.now()}`;
     }
   }, 500);

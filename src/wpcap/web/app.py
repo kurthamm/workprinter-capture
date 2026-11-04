@@ -30,6 +30,9 @@ WRONG_PASSWORD_DELAY_S = 1.0
 # Password checks running at once. scrypt takes about 50 ms of CPU and a thread from the pool
 # the event streams also use; parallel login attempts queue here instead of saturating both.
 LOGIN_CHECKS_AT_ONCE = 2
+# Logins waiting for a check beyond those running; more are refused with 503, so a flood
+# cannot queue unlimited requests in front of the real operator.
+LOGIN_MAX_WAITING = 8
 
 
 class LoginBody(BaseModel):
@@ -63,6 +66,7 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
     # Per app, not per module: an asyncio.Semaphore binds to the event loop that first waits
     # on it, and each server run (and each test client) has its own loop.
     login_checks = asyncio.Semaphore(LOGIN_CHECKS_AT_ONCE)
+    login_in_line = 0  # running plus waiting; only touched on the event loop thread
 
     # ---- auth ------------------------------------------------------------------------------
 
@@ -95,9 +99,16 @@ def create_app(service: Service, config: AppConfig) -> FastAPI:
 
     @app.post("/api/login")
     async def login(body: LoginBody, response: Response):
-        async with login_checks:
-            stored = config.server.password_hash
-            ok = await asyncio.to_thread(verify_password, body.password, stored)
+        nonlocal login_in_line
+        if login_in_line >= LOGIN_CHECKS_AT_ONCE + LOGIN_MAX_WAITING:
+            raise HTTPException(503, "too many logins at once; try again in a moment")
+        login_in_line += 1
+        try:
+            async with login_checks:
+                stored = config.server.password_hash
+                ok = await asyncio.to_thread(verify_password, body.password, stored)
+        finally:
+            login_in_line -= 1
         if not ok:
             await asyncio.sleep(WRONG_PASSWORD_DELAY_S)
             raise HTTPException(401, "wrong password")
