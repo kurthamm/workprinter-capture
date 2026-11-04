@@ -6,6 +6,7 @@ import argparse
 import datetime as dt
 import getpass
 import ipaddress
+import os
 import signal
 import sys
 from pathlib import Path
@@ -13,7 +14,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from wpcap.config import ConfigError, hash_password, load_config, new_secret, sample_config
+from wpcap.config import (
+    SIM_MIN_FRAMES,
+    ConfigError,
+    hash_password,
+    load_config,
+    new_secret,
+    sample_config,
+)
 from wpcap.machine import MachineConfig, MachineState
 from wpcap.reel import ReelFolder
 from wpcap.service import Service, ServiceError
@@ -27,6 +35,7 @@ from wpcap.tls import (
     make_server_cert,
     renew_server_cert,
     replace_server_cert,
+    server_cert_names,
     server_cert_not_after,
 )
 
@@ -104,6 +113,24 @@ def cmd_init_config(args: argparse.Namespace) -> int:
     if out.exists():
         print(f"{out} already exists; remove it first", file=sys.stderr)
         return 2
+    # Everything is checked before the first file or folder is made.
+    if not 1 <= args.port <= 65535:
+        print(f"--port must be 1 to 65535, not {args.port}", file=sys.stderr)
+        return 2
+    if args.sim_frames < SIM_MIN_FRAMES:
+        print(f"--sim-frames must be at least {SIM_MIN_FRAMES}", file=sys.stderr)
+        return 2
+    try:
+        ipaddress.ip_address(args.bind)
+    except ValueError:
+        print(f"--bind {args.bind!r} is not an IP address", file=sys.stderr)
+        return 2
+    for ip in args.ip:
+        try:
+            ipaddress.ip_address(ip)
+        except ValueError:
+            print(f"--ip {ip!r} is not an IP address", file=sys.stderr)
+            return 2
     # Absolute paths in the config: the service may run from another working directory.
     certs = Path(args.certs).resolve()
     pw = args.password if args.password is not None else _ask_password()
@@ -133,14 +160,32 @@ def cmd_init_config(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if not crt.exists():
+    if crt.exists():
+        have_dns, have_ips = server_cert_names(crt)
+        missing = [h for h in args.host if h.lower() not in have_dns]
+        missing += [ip for ip in args.ip if str(ipaddress.ip_address(ip)) not in have_ips]
+        if missing:
+            print(
+                f"the existing certificate {crt} lacks {', '.join(missing)}; run: "
+                f"wpcap gen-cert --certs {certs} --replace and the same --host/--ip",
+                file=sys.stderr,
+            )
+            return 2
+    else:
         make_server_cert(ca_crt, ca_key, crt, key, hosts, ips)
     text = sample_config(hash_password(pw), reels, crt, key, new_secret())
     text = text.replace('host = "0.0.0.0"', f'host = "{args.bind}"').replace(
         "port = 8443", f"port = {args.port}"
     )
     text = text.replace("sim_frames = 300", f"sim_frames = {args.sim_frames}")
-    out.write_text(text, encoding="utf-8")
+    # Exclusive and owner-only from the first byte: the file holds the session secret.
+    try:
+        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(f"{out} already exists; remove it first", file=sys.stderr)
+        return 2
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(text)
     print(f"wrote {out}\nCA certificate to trust on your devices: {ca_crt}")
     return 0
 

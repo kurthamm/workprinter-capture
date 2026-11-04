@@ -5,15 +5,18 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import re
 import secrets
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from wpcap.reel import ReelFolder
 
 FILM_TYPES = ("super8", "regular8")
 MACHINE_KINDS = ("sim",)  # plans 3 and 4 add "serial"
+_TOPIC_RE = re.compile(r"[A-Za-z0-9_-]+", re.ASCII)
 _SERVER_KEYS = {"host", "port", "password_hash", "secret", "cert_file", "key_file"}
 SIM_MIN_FRAMES = 20
 _MACHINE_KEYS = {"name", "kind", "reel_root", "delay_ms", "debounce_us", "film_type", "sim_frames"}
@@ -168,6 +171,17 @@ def _ntfy(data: dict) -> NtfyConfig | None:
     _nonempty(n, "ntfy", "topic")
     if not n["url"].startswith(("http://", "https://")):
         raise ConfigError(f"ntfy.url must start with http:// or https://, got {n['url']!r}")
+    try:
+        host = urlsplit(n["url"]).hostname
+    except ValueError as e:
+        raise ConfigError(f"ntfy.url is not a valid URL: {n['url']!r} ({e})") from e
+    if not host:
+        raise ConfigError(f"ntfy.url has no host: {n['url']!r}")
+    if not _TOPIC_RE.fullmatch(n["topic"]):
+        raise ConfigError(
+            f"ntfy.topic may hold only letters, digits, - and _ (got {n['topic']!r}); "
+            "# ? / and spaces would send the alert to another topic"
+        )
     return NtfyConfig(url=n["url"].rstrip("/"), topic=n["topic"])
 
 

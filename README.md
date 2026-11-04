@@ -31,7 +31,7 @@ python -m wpcap serve --config wpcap.toml
 
 `init-config` asks for a password. Optional flags: `--bind`, `--port` (default 8443), `--sim-frames`, `--host`, `--ip` (names and addresses for the certificate).
 
-Then open `https://<pc-name-or-ip>:8443/` on a phone or PC and log in. Both simulated machines record a simulated reel as soon as the page is up.
+Then open `https://<pc-name-or-ip>:8443/` on a phone or PC and log in. Both simulated machines start a simulated reel when `serve` starts. With the default `--sim-frames` of 300, each reel runs about 40 seconds, so log in promptly. When a reel finishes, press New Reel to record another.
 
 **One-time certificate step.** The page uses HTTPS with a certificate made by "WorkPrinter Capture Local CA". Import `certs/ca.crt` (in the folder given to `--certs`) into the phone or PC as a trusted certificate, and the browser shows no warning.
 

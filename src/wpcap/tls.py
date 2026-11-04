@@ -84,6 +84,9 @@ def make_server_cert(
         raise FileExistsError(f"{out_cert} or {out_key} already exists")
     ca = x509.load_pem_x509_certificate(ca_cert.read_bytes())
     signer = serialization.load_pem_private_key(ca_key.read_bytes(), password=None)
+    der, spki = serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo
+    if signer.public_key().public_bytes(der, spki) != ca.public_key().public_bytes(der, spki):
+        raise ValueError(f"{ca_key} does not match {ca_cert}")
     key = ec.generate_private_key(ec.SECP256R1())
     # Apple counts validity from notBefore, so `days` is measured from there.
     start = dt.datetime.now(dt.UTC) - dt.timedelta(minutes=5)
@@ -117,6 +120,15 @@ def make_server_cert(
 
 def server_cert_not_after(cert_file: Path) -> dt.datetime:
     return x509.load_pem_x509_certificate(cert_file.read_bytes()).not_valid_after_utc
+
+
+def server_cert_names(cert_file: Path) -> tuple[set[str], set[str]]:
+    """The DNS names and IP addresses in the certificate's subjectAltName."""
+    cert = x509.load_pem_x509_certificate(cert_file.read_bytes())
+    san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+    dns = {n.lower() for n in san.get_values_for_type(x509.DNSName)}
+    ips = {str(ip) for ip in san.get_values_for_type(x509.IPAddress)}
+    return dns, ips
 
 
 def renew_server_cert(ca_cert: Path, ca_key: Path, cert_file: Path, key_file: Path) -> dt.datetime:

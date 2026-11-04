@@ -273,3 +273,22 @@ def test_close_reports_how_many_alerts_were_not_delivered():
             bus.close(timeout_s=0.2, per_alert_s=0.1)
     finally:
         release.set()
+
+
+def test_forwarded_alerts_are_queued_while_the_id_lock_is_held():
+    class Quiet:
+        def alert(self, level, title, message):
+            pass
+
+    bus = AlertBus(forward=Quiet())
+    held = []
+    real = bus._enqueue_forward_locked
+
+    def spy(a):
+        held.append(bus._lock.locked())
+        return real(a)
+
+    bus._enqueue_forward_locked = spy
+    bus.for_machine("m").alert("problem", "x", "")
+    bus.close()
+    assert held == [True]

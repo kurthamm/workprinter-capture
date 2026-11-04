@@ -204,3 +204,14 @@ def test_sim_frames_below_what_the_gate_needs_rejected(tmp_path):
     text = good(tmp_path).replace("sim_frames = 120", "sim_frames = 19", 1)
     with pytest.raises(ConfigError, match="sim_frames must be at least 20"):
         load_config(write(tmp_path, text))
+
+
+@pytest.mark.parametrize(
+    "url, topic",
+    [("http://", "wp"), ("https:///x", "wp"), ("http://h:2586", "alerts#test"),
+     ("http://h:2586", "a/b"), ("http://h:2586", "a b"), ("http://h:2586", "a?b")],
+)
+def test_incomplete_ntfy_url_or_delimiter_in_topic_rejected(tmp_path, url, topic):
+    text = good(tmp_path) + f'\n[ntfy]\nurl = "{url}"\ntopic = "{topic}"\n'
+    with pytest.raises(ConfigError, match="ntfy"):
+        load_config(write(tmp_path, text))

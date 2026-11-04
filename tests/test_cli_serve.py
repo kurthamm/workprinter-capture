@@ -325,3 +325,36 @@ def test_serve_failed_start_does_not_claim_a_clean_stop(tmp_path):
     r = run("serve", "--config", str(out))
     assert r.returncode == 2 and "cannot start" in r.stderr
     assert "stopped:" not in r.stdout
+
+
+@pytest.mark.parametrize(
+    "extra, message",
+    [
+        (["--ip", "not-an-ip"], "not an IP address"),
+        (["--port", "0"], "--port"),
+        (["--port", "70000"], "--port"),
+        (["--sim-frames", "5"], "--sim-frames"),
+        (["--bind", "nowhere"], "--bind"),
+    ],
+)
+def test_init_config_rejects_bad_values_before_writing_anything(tmp_path, extra, message):
+    r = _init(tmp_path, *extra)
+    assert r.returncode == 2 and message in r.stderr and "Traceback" not in r.stderr
+    assert not (tmp_path / "wpcap.toml").exists()
+    assert not (tmp_path / "c").exists() and not (tmp_path / "r").exists()
+
+
+def test_init_config_fails_when_the_reused_certificate_lacks_a_requested_name(tmp_path):
+    assert _init(tmp_path).returncode == 0
+    (tmp_path / "wpcap.toml").unlink()
+    r = _init(tmp_path, "--ip", "10.9.8.7", "--host", "newname")
+    assert r.returncode == 2 and "lacks" in r.stderr and "10.9.8.7" in r.stderr
+    assert not (tmp_path / "wpcap.toml").exists()
+    # names already in the certificate are fine
+    assert _init(tmp_path, "--host", "localhost").returncode == 0
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_init_config_file_is_owner_only(tmp_path):
+    assert _init(tmp_path).returncode == 0
+    assert (tmp_path / "wpcap.toml").stat().st_mode & 0o077 == 0

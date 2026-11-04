@@ -153,3 +153,20 @@ def test_failed_renewal_of_an_expired_certificate_stops_startup(tmp_path, monkey
     monkeypatch.setattr(cli, "renew_server_cert", broken)
     with pytest.raises(OSError, match="disk full"):
         cli.renew_cert_if_expiring(crt, key)
+
+
+def test_a_ca_key_that_does_not_match_the_ca_certificate_is_refused(tmp_path):
+    ca_crt, _ = make_local_ca(tmp_path / "a")
+    _, other_key = make_local_ca(tmp_path / "b")
+    with pytest.raises(ValueError, match="does not match"):
+        make_server_cert(ca_crt, other_key, tmp_path / "s.crt", tmp_path / "s.key", ["h"], [])
+    assert not (tmp_path / "s.crt").exists() and not (tmp_path / "s.key").exists()
+
+
+def test_server_cert_names_lists_dns_names_and_addresses(tmp_path):
+    from wpcap.tls import server_cert_names
+
+    ca_crt, ca_key = make_local_ca(tmp_path)
+    crt = tmp_path / "s.crt"
+    make_server_cert(ca_crt, ca_key, crt, tmp_path / "s.key", ["Scanpc"], ["192.168.1.5"])
+    assert server_cert_names(crt) == ({"scanpc"}, {"192.168.1.5"})

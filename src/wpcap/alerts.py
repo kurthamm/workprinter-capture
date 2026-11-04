@@ -166,8 +166,16 @@ class AlertBus:
             # Subscription._put takes only its own lock and never calls back into the bus.
             for s in self._subs:
                 s._put(a)
-        if forward and self._forward is not None and should_forward(level, title):
-            self._enqueue_forward(a)
+            # Also under it: the phone gets alerts in id order, and close() cannot slip its
+            # stop sentinel in between the id and the enqueue.
+            full = (
+                forward
+                and self._forward is not None
+                and should_forward(level, title)
+                and self._enqueue_forward_locked(a)
+            )
+        if full:
+            self._complain("phone alert queue full", machine)
 
     def _complain(self, message: str, machine: str) -> None:
         with self._lock:
@@ -177,31 +185,28 @@ class AlertBus:
             self._last_complaint = now
         self._publish("warning", "Phone alert failed", message, machine, forward=False)
 
-    def _enqueue_forward(self, a: Alert) -> None:
-        """Hand the alert to the forwarder thread; never blocks, never raises."""
+    def _enqueue_forward_locked(self, a: Alert) -> bool:
+        """With self._lock held: hand the alert to the forwarder thread; never blocks, never
+        raises. Returns True when the queue was full and the oldest alert was dropped."""
+        if self._fclosed:
+            return False
+        if self._fthread is None:
+            self._fthread = threading.Thread(
+                target=self._forward_loop, name="alert-forwarder", daemon=True
+            )
+            self._fthread.start()
         full = False
-        with self._lock:
-            if self._fclosed:
-                return
-            if self._fthread is None:
-                self._fthread = threading.Thread(
-                    target=self._forward_loop, name="alert-forwarder", daemon=True
-                )
-                self._fthread.start()
-            # Under the lock so close() cannot slip its stop sentinel in ahead of this alert.
-            while True:
+        while True:
+            try:
+                self._fq.put_nowait(a)
+                return full
+            except queue.Full:
+                full = True
                 try:
-                    self._fq.put_nowait(a)
-                    break
-                except queue.Full:
-                    full = True
-                    try:
-                        self._fq.get_nowait()
-                    except queue.Empty:
-                        continue
-                    self.forward_dropped += 1
-        if full:
-            self._complain("phone alert queue full", a.machine)
+                    self._fq.get_nowait()
+                except queue.Empty:
+                    continue
+                self.forward_dropped += 1
 
     def _forward_loop(self) -> None:
         assert self._forward is not None
